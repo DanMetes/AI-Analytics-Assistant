@@ -1,8 +1,12 @@
 """AI Analytics Assistant - Artifact Viewer UI"""
 import streamlit as st
+import streamlit.components.v1 as components
 import json
+import subprocess
 from pathlib import Path
 import pandas as pd
+import matplotlib.pyplot as plt
+from collections import defaultdict
 
 st.set_page_config(
     page_title="AI Analytics Assistant",
@@ -78,81 +82,70 @@ def render_run_header(ctx: RunContext):
 
 
 def render_overview(ctx: RunContext):
-    """Overview tab with curated layout."""
+    """Overview tab with curated layout using render_run_summary."""
+    import sys
+    app_dir = Path(__file__).parent
+    if str(app_dir) not in sys.path:
+        sys.path.insert(0, str(app_dir))
+    from ui_components.summary import render_run_summary, display_run_summary
+    
     st.header("Overview")
     render_run_header(ctx)
     
-    st.subheader("Dataset & Run")
-    source_csv = "N/A"
-    if ctx.analysis_log and "profile_summary" in ctx.analysis_log:
-        source_csv = ctx.analysis_log["profile_summary"].get("source_csv", "N/A")
-    elif ctx.data_profile:
-        source_csv = ctx.data_profile.get("source_csv", "N/A")
+    st.subheader("Run Summary")
+    display_run_summary(ctx.run_path)
     
-    rows = ctx.data_profile.get("rows", "N/A") if ctx.data_profile else "N/A"
-    cols = ctx.data_profile.get("cols", "N/A") if ctx.data_profile else "N/A"
-    
-    rows_display = f"{rows:,}" if isinstance(rows, (int, float)) else str(rows)
-    cols_display = str(cols)
-    
-    st.markdown(f"""
-- **Source file:** `{source_csv}`
-- **Rows:** {rows_display} | **Columns:** {cols_display}
-- **Run ID:** `{ctx.run_path.name}`
-- **Project ID:** `{ctx.run_path.parent.parent.name}`
-    """)
-    
-    st.subheader("Data Quality")
+    st.subheader("Data Quality Highlights")
     if ctx.data_profile and "columns" in ctx.data_profile:
         columns = ctx.data_profile["columns"]
         
-        missing_cols = [
-            (name, info.get("missing_fraction", 0) * 100)
-            for name, info in columns.items()
-            if info.get("missing_count", 0) > 0
-        ]
-        if missing_cols:
-            missing_cols.sort(key=lambda x: x[1], reverse=True)
-            st.markdown("**Missingness:**")
-            for name, pct in missing_cols[:5]:
-                st.markdown(f"- `{name}`: {pct:.1f}% missing")
-        else:
-            st.markdown("- ✅ No missing values detected")
+        col1, col2, col3 = st.columns(3)
         
-        high_card = [
-            (name, info.get("cardinality", 0))
-            for name, info in columns.items()
-            if info.get("cardinality", 0) > 100
-        ]
-        if high_card:
-            high_card.sort(key=lambda x: x[1], reverse=True)
-            st.markdown("**High-cardinality columns:**")
-            for name, card in high_card[:5]:
-                st.markdown(f"- `{name}`: {card:,} unique values")
+        with col1:
+            st.markdown("**Missingness**")
+            missing_cols = [
+                (name, info.get("missing_count", 0), info.get("missing_fraction", 0) * 100)
+                for name, info in columns.items()
+                if info.get("missing_count", 0) > 0
+            ]
+            if missing_cols:
+                missing_cols.sort(key=lambda x: x[1], reverse=True)
+                for name, count, pct in missing_cols[:5]:
+                    st.markdown(f"- `{name}`: {count:,} ({pct:.1f}%)")
+            else:
+                st.success("No missing values")
         
-        skewed = [
-            (name, info.get("skew", 0))
-            for name, info in columns.items()
-            if info.get("skew_flag", False)
-        ]
-        if skewed:
-            skewed.sort(key=lambda x: abs(x[1]), reverse=True)
-            st.markdown("**Skewed distributions:**")
-            for name, skew in skewed[:5]:
-                st.markdown(f"- `{name}`: skew = {skew:.2f}")
+        with col2:
+            st.markdown("**High-Cardinality**")
+            high_card = [
+                (name, info.get("cardinality", 0))
+                for name, info in columns.items()
+                if info.get("cardinality", 0) > 100
+            ]
+            if high_card:
+                high_card.sort(key=lambda x: x[1], reverse=True)
+                for name, card in high_card[:5]:
+                    st.markdown(f"- `{name}`: {card:,} unique")
+            else:
+                st.success("No high-cardinality columns")
+        
+        with col3:
+            st.markdown("**Skew Flags**")
+            skewed = [
+                (name, info.get("skew", 0))
+                for name, info in columns.items()
+                if info.get("skew_flag", False)
+            ]
+            if skewed:
+                skewed.sort(key=lambda x: abs(x[1]), reverse=True)
+                for name, skew in skewed[:5]:
+                    st.markdown(f"- `{name}`: {skew:.2f}")
+            else:
+                st.success("No skewed distributions")
     else:
-        st.info("Data profile not available.")
+        st.info("Data profile not available for this run.")
     
-    st.subheader("What to review next")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.info("📋 **Key Findings** - Review detected anomalies and insights")
-    with col2:
-        st.info("📊 **Metrics** - Explore KPIs and segment breakdowns")
-    with col3:
-        st.info("🔍 **Profiling & EDA** - Deep-dive into data distributions")
-    
-    with st.expander("Advanced: raw artifacts"):
+    with st.expander("Raw artifact data"):
         if ctx.ingest_meta:
             st.markdown("**Ingest Metadata:**")
             st.json(ctx.ingest_meta)
@@ -162,10 +155,37 @@ def render_overview(ctx: RunContext):
         if ctx.analysis_log:
             st.markdown("**Analysis Log:**")
             st.json(ctx.analysis_log)
+        if ctx.data_profile:
+            st.markdown("**Data Profile:**")
+            st.json(ctx.data_profile)
+
+
+def group_anomalies_by_mechanism(anomaly_list: list) -> dict:
+    """Group anomalies by their underlying mechanism/metric type."""
+    groups = defaultdict(list)
+    
+    for anomaly in anomaly_list:
+        metric = anomaly.get("metric", "other")
+        base_metric = metric.split("_")[0] if "_" in metric else metric
+        
+        if "units" in metric.lower():
+            key = "units"
+        elif "sales" in metric.lower():
+            key = "sales"
+        elif "profit" in metric.lower():
+            key = "profit"
+        elif "margin" in metric.lower():
+            key = "margin"
+        else:
+            key = base_metric
+        
+        groups[key].append(anomaly)
+    
+    return dict(groups)
 
 
 def render_key_findings(ctx: RunContext):
-    """Key Findings tab with severity cards."""
+    """Key Findings tab with unified anomalies and interpretation."""
     st.header("Key Findings")
     render_run_header(ctx)
     
@@ -179,66 +199,98 @@ def render_key_findings(ctx: RunContext):
     if anomaly_list:
         st.subheader(f"Anomalies ({len(anomaly_list)} detected)")
         
-        severity_order = {"critical": 0, "warning": 1, "info": 2}
-        sorted_anomalies = sorted(
-            anomaly_list, 
-            key=lambda x: severity_order.get(x.get("severity", "info"), 3)
-        )
+        grouped = group_anomalies_by_mechanism(anomaly_list)
         
-        for anomaly in sorted_anomalies:
-            severity = anomaly.get("severity", "info")
+        for mechanism, anomalies in grouped.items():
+            severity_order = {"critical": 0, "warning": 1, "info": 2}
+            sorted_anomalies = sorted(
+                anomalies, 
+                key=lambda x: severity_order.get(x.get("severity", "info"), 3)
+            )
             
-            if severity == "critical":
-                badge = "🔴 **CRITICAL**"
+            top_severity = sorted_anomalies[0].get("severity", "info") if sorted_anomalies else "info"
+            
+            if top_severity == "critical":
+                badge = "🔴"
                 border_color = "#ff4b4b"
-            elif severity == "warning":
-                badge = "🟠 **WARNING**"
+            elif top_severity == "warning":
+                badge = "🟠"
                 border_color = "#ffa500"
             else:
-                badge = "🔵 **INFO**"
+                badge = "🔵"
                 border_color = "#4b9fff"
             
-            summary = anomaly.get("summary", "No summary available")
-            metric = anomaly.get("metric", "N/A")
-            value = anomaly.get("value", "N/A")
+            mechanism_title = mechanism.replace("_", " ").title()
             
             st.markdown(f"""
 <div style="border-left: 4px solid {border_color}; padding: 10px 15px; margin: 10px 0; background: rgba(0,0,0,0.05); border-radius: 4px;">
-    <div>{badge}</div>
-    <div style="margin-top: 8px;"><strong>{summary}</strong></div>
-    <div style="margin-top: 5px; font-size: 0.9em; color: #666;">
-        Metric: <code>{metric}</code> | Value: <code>{value}</code>
-    </div>
+    <div><strong>{badge} {mechanism_title} Anomalies ({len(anomalies)})</strong></div>
 </div>
             """, unsafe_allow_html=True)
             
-            with st.expander("View details"):
-                threshold = anomaly.get("threshold", {})
-                if threshold:
-                    st.markdown(f"**Thresholds:** Critical > {threshold.get('critical', 'N/A')}, Warning > {threshold.get('warning', 'N/A')}")
-                st.markdown(f"**Direction:** {anomaly.get('direction', 'N/A')}")
-                if "evidence_keys" in anomaly:
-                    st.markdown(f"**Evidence:** `{', '.join(anomaly['evidence_keys'])}`")
-                st.markdown("**Recommended:** Investigate the data for this time period to understand the spike.")
+            for anomaly in sorted_anomalies:
+                severity = anomaly.get("severity", "info")
+                summary = anomaly.get("summary", "No summary available")
+                metric = anomaly.get("metric", "N/A")
+                value = anomaly.get("value", "N/A")
+                
+                severity_label = {"critical": "CRITICAL", "warning": "WARNING", "info": "INFO"}.get(severity, "INFO")
+                
+                st.markdown(f"- **[{severity_label}]** {summary}")
+                
+                with st.expander(f"Details: {metric}"):
+                    st.markdown(f"**Metric:** `{metric}` | **Value:** `{value}`")
+                    
+                    threshold = anomaly.get("threshold", {})
+                    if threshold:
+                        st.markdown(f"**Thresholds:** Critical > {threshold.get('critical', 'N/A')}, Warning > {threshold.get('warning', 'N/A')}")
+                    
+                    st.markdown(f"**Direction:** {anomaly.get('direction', 'N/A')}")
+                    
+                    if "evidence_keys" in anomaly:
+                        st.markdown(f"**Evidence Keys:** `{', '.join(anomaly['evidence_keys'])}`")
+                    
+                    st.markdown("**Recommended:** Investigate the underlying data for this metric to understand the anomaly.")
     else:
-        st.success("✅ No anomalies detected in this analysis run.")
+        st.success("No anomalies detected in this analysis run.")
+    
+    st.subheader("Interpretation Summary")
     
     if ctx.interpretation:
-        st.subheader("Interpretation")
         if isinstance(ctx.interpretation, dict):
             if "summary" in ctx.interpretation:
+                st.markdown("**What the anomalies suggest:**")
                 st.markdown(ctx.interpretation["summary"])
+            
             if "findings" in ctx.interpretation:
+                st.markdown("**Key findings:**")
                 for finding in ctx.interpretation["findings"]:
                     st.markdown(f"- {finding}")
+            
+            if "ruled_out" in ctx.interpretation:
+                st.markdown("**What's ruled out:**")
+                for item in ctx.interpretation["ruled_out"]:
+                    st.markdown(f"- {item}")
+            
             if "recommendations" in ctx.interpretation:
-                st.markdown("**Recommendations:**")
+                st.markdown("**Further analysis needed:**")
                 for rec in ctx.interpretation["recommendations"]:
                     st.markdown(f"- {rec}")
         else:
             st.write(ctx.interpretation)
+    else:
+        if anomaly_list:
+            critical_count = sum(1 for a in anomaly_list if a.get("severity") == "critical")
+            warning_count = sum(1 for a in anomaly_list if a.get("severity") == "warning")
+            
+            st.markdown(f"""
+**Summary:** This run detected {len(anomaly_list)} anomalies ({critical_count} critical, {warning_count} warnings).
+Review the anomaly cards above for details on each finding.
+            """)
+        else:
+            st.info("No interpretation available for this run.")
     
-    with st.expander("Advanced: raw artifacts"):
+    with st.expander("Raw artifact data"):
         if ctx.anomalies:
             st.markdown("**Anomalies (raw):**")
             st.json(ctx.anomalies)
@@ -248,7 +300,7 @@ def render_key_findings(ctx: RunContext):
 
 
 def render_metrics(ctx: RunContext):
-    """Metrics tab with headline KPIs and explorer."""
+    """Metrics tab with headline KPIs and Trends/Drivers panel."""
     st.header("Metrics")
     render_run_header(ctx)
     
@@ -260,101 +312,117 @@ def render_metrics(ctx: RunContext):
     
     st.subheader("Headline KPIs")
     
-    overall_rows = df[df["section"] == "overall"]
-    time_summary = df[df["section"] == "time_summary"]
+    time_summary = df[df["section"] == "time_summary"].copy()
+    overall = df[df["section"] == "overall"].copy()
     
-    kpi_cols = st.columns(4)
-    kpi_count = 0
+    kpi_data = {}
     
-    if not overall_rows.empty:
-        row_count_row = overall_rows[overall_rows["key"] == "row_count"]
+    if not overall.empty:
+        row_count_row = overall[overall["key"] == "row_count"]
         if not row_count_row.empty:
-            with kpi_cols[kpi_count % 4]:
-                st.metric("Total Rows", f"{int(float(row_count_row['value'].iloc[0])):,}")
-            kpi_count += 1
+            kpi_data["Total Rows"] = (int(float(row_count_row["value"].iloc[0])), "count")
     
     if not time_summary.empty:
         for metric_key in ["sum_sales", "sum_profit", "sum_units"]:
             metric_rows = time_summary[time_summary["key"].str.contains(metric_key)]
             if not metric_rows.empty:
                 total = metric_rows["value"].astype(float).sum()
-                label = metric_key.replace("sum_", "Total ").title()
-                with kpi_cols[kpi_count % 4]:
-                    if "sales" in metric_key or "profit" in metric_key:
-                        st.metric(label, f"${total:,.0f}")
-                    else:
-                        st.metric(label, f"{total:,.0f}")
-                kpi_count += 1
-                if kpi_count >= 4:
-                    break
+                label = metric_key.replace("sum_", "Total ").replace("_", " ").title()
+                metric_type = "currency" if metric_key in ["sum_sales", "sum_profit"] else "count"
+                kpi_data[label] = (total, metric_type)
+        
+        margin_rows = time_summary[time_summary["key"].str.contains("profit_margin")]
+        if not margin_rows.empty:
+            avg_margin = margin_rows["value"].astype(float).mean()
+            kpi_data["Avg Profit Margin"] = (avg_margin, "percent")
     
-    st.subheader("Explore Drivers")
+    if kpi_data:
+        kpi_cols = st.columns(min(len(kpi_data), 5))
+        for i, (label, (value, metric_type)) in enumerate(list(kpi_data.items())[:5]):
+            with kpi_cols[i]:
+                if metric_type == "currency":
+                    st.metric(label, f"${value:,.0f}")
+                elif metric_type == "percent":
+                    st.metric(label, f"{value:.1%}")
+                else:
+                    st.metric(label, f"{value:,.0f}")
+    
+    st.subheader("Trends and Drivers")
+    
+    col1, col2 = st.columns(2)
     
     sections = df["section"].unique().tolist()
-    summary_sections = [s for s in sections if "summary" in s.lower() and s != "time_summary"]
+    summary_sections = [s for s in sections if "summary" in s.lower()]
     
-    if summary_sections or "time_summary" in sections:
-        available_sections = ["time_summary"] + summary_sections if "time_summary" in sections else summary_sections
+    available_sections = summary_sections if summary_sections else sections[:5]
+    
+    with col1:
+        selected_section = st.selectbox(
+            "Group by", 
+            available_sections, 
+            format_func=lambda x: x.replace("_summary", "").replace("_", " ").title()
+        )
+    
+    section_df = df[df["section"] == selected_section].copy()
+    
+    if not section_df.empty:
+        section_df["group"] = section_df["key"].apply(lambda x: x.split(":")[0] if ":" in x else x)
+        section_df["metric_name"] = section_df["key"].apply(lambda x: x.split(":")[-1] if ":" in x else x)
         
-        col1, col2 = st.columns(2)
-        with col1:
-            selected_section = st.selectbox("Group by", available_sections, format_func=lambda x: x.replace("_summary", "").replace("_", " ").title())
+        available_metrics = section_df["metric_name"].unique().tolist()
+        numeric_metrics = [m for m in available_metrics if m not in ["n", "group_by"]]
         
-        section_df = df[df["section"] == selected_section].copy()
+        with col2:
+            if numeric_metrics:
+                default_metric = "sum_sales" if "sum_sales" in numeric_metrics else numeric_metrics[0]
+                selected_metric = st.selectbox("Metric", numeric_metrics, index=numeric_metrics.index(default_metric) if default_metric in numeric_metrics else 0)
+            else:
+                selected_metric = available_metrics[0] if available_metrics else None
         
-        if not section_df.empty:
-            section_df["group"] = section_df["key"].apply(lambda x: x.split(":")[0] if ":" in x else x)
-            section_df["metric_name"] = section_df["key"].apply(lambda x: x.split(":")[-1] if ":" in x else x)
+        if selected_metric:
+            metric_df = section_df[section_df["metric_name"] == selected_metric].copy()
+            metric_df["value"] = pd.to_numeric(metric_df["value"], errors="coerce")
+            metric_df = metric_df.dropna(subset=["value"])
+            metric_df = metric_df.sort_values("value", ascending=False).head(15)
             
-            available_metrics = section_df["metric_name"].unique().tolist()
-            numeric_metrics = [m for m in available_metrics if m not in ["n", "group_by"]]
-            
-            with col2:
-                if numeric_metrics:
-                    selected_metric = st.selectbox("Metric", numeric_metrics)
-                else:
-                    selected_metric = available_metrics[0] if available_metrics else None
-            
-            if selected_metric:
-                metric_df = section_df[section_df["metric_name"] == selected_metric].copy()
-                metric_df["value"] = pd.to_numeric(metric_df["value"], errors="coerce")
-                metric_df = metric_df.dropna(subset=["value"])
-                metric_df = metric_df.sort_values("value", ascending=False).head(15)
+            if not metric_df.empty:
+                col1, col2 = st.columns([1, 1])
                 
-                if not metric_df.empty:
-                    col1, col2 = st.columns([1, 1])
-                    
-                    with col1:
-                        st.markdown("**Top 15 Groups:**")
-                        display_df = metric_df[["group", "value"]].copy()
-                        display_df.columns = ["Group", selected_metric.replace("_", " ").title()]
-                        st.dataframe(display_df, hide_index=True, width="stretch")
-                    
-                    with col2:
-                        st.markdown("**Distribution:**")
-                        chart_df = metric_df.set_index("group")["value"]
-                        st.bar_chart(chart_df)
+                with col1:
+                    st.markdown("**Top 15 Groups:**")
+                    display_df = metric_df[["group", "value"]].copy()
+                    display_df.columns = ["Group", selected_metric.replace("_", " ").title()]
+                    st.dataframe(display_df, hide_index=True, width="stretch")
+                
+                with col2:
+                    st.markdown("**Distribution:**")
+                    fig, ax = plt.subplots(figsize=(8, 6))
+                    bars = ax.barh(metric_df["group"].iloc[::-1], metric_df["value"].iloc[::-1])
+                    ax.set_xlabel(selected_metric.replace("_", " ").title())
+                    ax.set_ylabel("Group")
+                    plt.tight_layout()
+                    st.pyplot(fig)
+                    plt.close()
     
-    csv_data = df.to_csv(index=False)
-    st.download_button(
-        label="📥 Download Full Metrics CSV",
-        data=csv_data,
-        file_name="metrics.csv",
-        mime="text/csv"
-    )
-    
-    with st.expander("Advanced: full metrics table"):
+    with st.expander("Full metrics data"):
         st.dataframe(df, width="stretch")
+        csv_data = df.to_csv(index=False)
+        st.download_button(
+            label="Download Full Metrics CSV",
+            data=csv_data,
+            file_name="metrics.csv",
+            mime="text/csv"
+        )
 
 
 def render_profiling_eda(ctx: RunContext):
-    """Profiling & EDA tab with highlights first."""
+    """Profiling & EDA tab with merged highlights."""
     st.header("Profiling & EDA")
     render_run_header(ctx)
     
+    st.subheader("EDA Highlights")
+    
     if ctx.data_profile:
-        st.subheader("Data Highlights")
-        
         rows = ctx.data_profile.get("rows", "N/A")
         cols = ctx.data_profile.get("cols", "N/A")
         columns = ctx.data_profile.get("columns", {})
@@ -364,25 +432,24 @@ def render_profiling_eda(ctx: RunContext):
             for col_info in columns.values()
         ) if columns else 0
         
-        col1, col2, col3 = st.columns(3)
+        total_cells = rows * cols if isinstance(rows, int) and isinstance(cols, int) else 0
+        missing_rate = (total_missing / total_cells * 100) if total_cells > 0 else 0
+        
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.metric("Rows", f"{rows:,}" if isinstance(rows, int) else rows)
         with col2:
             st.metric("Columns", cols)
         with col3:
             st.metric("Missing Cells", f"{total_missing:,}")
+        with col4:
+            st.metric("Missing Rate", f"{missing_rate:.2f}%")
         
         if columns:
-            missing_cols = [
-                (name, info.get("missing_count", 0), info.get("missing_fraction", 0) * 100)
-                for name, info in columns.items()
-                if info.get("missing_count", 0) > 0
-            ]
-            if missing_cols:
-                missing_cols.sort(key=lambda x: x[1], reverse=True)
-                st.markdown("**Most Missing Columns:**")
-                for name, count, pct in missing_cols[:5]:
-                    st.markdown(f"- `{name}`: {count:,} ({pct:.1f}%)")
+            numeric_cols = [name for name, info in columns.items() if info.get("dtype") in ["int", "float"]]
+            string_cols = [name for name, info in columns.items() if info.get("dtype") == "string"]
+            
+            st.markdown(f"**Column Types:** {len(numeric_cols)} numeric, {len(string_cols)} categorical")
             
             skewed_cols = [
                 (name, info.get("skew", 0))
@@ -391,66 +458,185 @@ def render_profiling_eda(ctx: RunContext):
             ]
             if skewed_cols:
                 skewed_cols.sort(key=lambda x: abs(x[1]), reverse=True)
-                st.markdown("**Most Skewed Columns:**")
-                for name, skew in skewed_cols[:5]:
-                    st.markdown(f"- `{name}`: skew = {skew:.2f}")
+                st.markdown("**Highly Skewed Columns:**")
+                for name, skew in skewed_cols[:3]:
+                    direction = "right" if skew > 0 else "left"
+                    st.markdown(f"- `{name}`: {skew:.2f} ({direction}-skewed)")
+    else:
+        st.info("Data profile not available for this run.")
     
+    st.subheader("Full Profiling Report")
     eda_html_path = ctx.run_path / "eda_report.html"
     if eda_html_path.exists():
-        st.subheader("Full Profiling Report")
         with open(eda_html_path, "r", encoding="utf-8") as f:
             html_content = f.read()
-        st.components.v1.html(html_content, height=800, scrolling=True)
+        components.html(html_content, height=800, scrolling=True)
     else:
         st.warning("""
 **Profiling report not available**
 
 The ydata-profiling HTML report was not generated for this run.
 
-**Why this happens:**
-- ydata-profiling requires Python 3.12 or earlier
-- The `ydata-profiling` package may not be installed
-
-**How to enable:**
-1. Ensure Python version is 3.11 or 3.12
-2. Install with: `pip install ydata-profiling`
+**How to enable profiling:**
+1. Ensure Python version is 3.11 or 3.12 (required by ydata-profiling)
+2. Install with: `pip install -e '.[profiling]'`
 3. Re-run the analysis
+
+Profiling provides detailed statistical summaries, correlations, and data quality checks.
         """)
     
     plots_dir = ctx.run_path / "plots"
     if plots_dir.exists():
-        st.subheader("Generated Plots")
         plots = list(plots_dir.glob("*.png"))
         if plots:
+            st.subheader("Generated Plots")
             cols = st.columns(2)
             for i, plot_path in enumerate(sorted(plots)):
                 with cols[i % 2]:
                     st.image(str(plot_path), caption=plot_path.stem.replace("_", " ").title())
+
+
+def run_analyst_cli(project_id: str, question: str) -> dict:
+    """
+    Run the analyst_agent ask CLI command and capture output.
+    
+    Returns dict with:
+        - success: bool
+        - answer: str (if answerable)
+        - plan: str (if not directly answerable)
+        - code: str (generated code if any)
+        - error: str (if failed)
+    """
+    try:
+        result = subprocess.run(
+            ["python", "-m", "analyst_agent", "ask", "--project", project_id, "--question", question],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=str(Path(__file__).parent.parent)
+        )
+        
+        if result.returncode == 0:
+            output = result.stdout.strip()
+            return {
+                "success": True,
+                "answer": output,
+                "plan": None,
+                "code": None,
+                "error": None
+            }
         else:
-            st.info("No plot images found in this run.")
+            return {
+                "success": False,
+                "answer": None,
+                "plan": None,
+                "code": None,
+                "error": result.stderr.strip() or "Command failed"
+            }
+    except subprocess.TimeoutExpired:
+        return {
+            "success": False,
+            "answer": None,
+            "plan": None,
+            "code": None,
+            "error": "Request timed out after 30 seconds"
+        }
+    except FileNotFoundError:
+        return {
+            "success": False,
+            "answer": None,
+            "plan": None,
+            "code": None,
+            "error": "analyst_agent CLI not available"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "answer": None,
+            "plan": None,
+            "code": None,
+            "error": str(e)
+        }
 
 
 def render_ask_explore(ctx: RunContext):
-    """Ask & Explore tab - stub for future LLM integration."""
+    """Ask & Explore tab with CLI integration."""
+    import sys
+    app_dir = Path(__file__).parent
+    if str(app_dir) not in sys.path:
+        sys.path.insert(0, str(app_dir))
+    from llm_utils import load_llm_interpretation, render_llm_summary, render_llm_placeholder
+    
     st.header("Ask & Explore")
     render_run_header(ctx)
     
-    st.info("🚧 This feature is coming soon - LLM-backed Q&A for your analysis artifacts.")
+    if not render_llm_summary(ctx.run_path):
+        render_llm_placeholder()
     
     st.subheader("Ask a Question")
-    question = st.text_input("Enter your question about this analysis run:", placeholder="e.g., What caused the spike in units for 2023?")
+    st.markdown("Query the analysis artifacts using natural language.")
     
-    if st.button("Submit", type="primary"):
-        if question:
-            st.warning(f"LLM integration coming soon. Your question: **{question}**")
-        else:
-            st.error("Please enter a question.")
+    question = st.text_input(
+        "Enter your question:",
+        placeholder="e.g., What caused the spike in units for 2023?"
+    )
+    
+    project_id = ctx.run_path.parent.parent.name
+    
+    col1, col2 = st.columns([1, 4])
+    with col1:
+        submit = st.button("Submit", type="primary")
+    
+    if submit and question:
+        with st.spinner("Processing your question..."):
+            result = run_analyst_cli(project_id, question)
+        
+        if result["success"] and result["answer"]:
+            st.success("Answer found:")
+            st.markdown(result["answer"])
+            
+            if result.get("evidence_keys"):
+                st.markdown("**Evidence:**")
+                for key in result["evidence_keys"]:
+                    st.markdown(f"- `{key}`")
+        elif result["error"]:
+            if "not available" in result["error"].lower():
+                st.info("""
+**CLI not available**
+
+The analyst_agent CLI is not installed or configured. 
+LLM-powered Q&A features are coming soon.
+                """)
+            else:
+                st.warning(f"Could not process question: {result['error']}")
+            
+            if result.get("plan"):
+                st.markdown("**Suggested approach:**")
+                st.markdown(result["plan"])
+            
+            if result.get("code"):
+                st.markdown("**Generated code:**")
+                st.code(result["code"], language="python")
+                st.download_button(
+                    label="Download code",
+                    data=result["code"],
+                    file_name="generated_query.py",
+                    mime="text/x-python"
+                )
+    elif submit:
+        st.error("Please enter a question.")
     
     st.subheader("Available Artifacts")
     if ctx.run_path.exists():
         artifacts = sorted([f.name for f in ctx.run_path.iterdir() if f.is_file()])
-        for artifact in artifacts:
-            st.markdown(f"- `{artifact}`")
+        col1, col2 = st.columns(2)
+        mid = len(artifacts) // 2
+        with col1:
+            for artifact in artifacts[:mid]:
+                st.markdown(f"- `{artifact}`")
+        with col2:
+            for artifact in artifacts[mid:]:
+                st.markdown(f"- `{artifact}`")
 
 
 def main():

@@ -1,0 +1,103 @@
+NON‑NEGOTIABLE CONSTRAINTS (READ FIRST)
+
+DO NOT modify any code that produces artifacts, runs analyses, or writes files. This includes everything under src/, projects/, tests/, tools/, and any CLI or engine logic.
+
+DO NOT change artifact schemas, filenames, or locations.
+
+DO NOT introduce new folders arbitrarily. New files are allowed only inside the existing app/ folder, and only when strictly necessary.
+
+DO NOT duplicate logic across files. Reuse existing helpers where possible.
+
+The analytics engine is deterministic and locked. You are only improving presentation and UX.
+
+Goal: Improve narrative clarity, remove redundancy, and prep for LLM/Ask integration
+
+Work strictly in the app/ folder. Keep the backend untouched.
+
+1) Create a ui_components/summary.py helper
+
+Implement a render_run_summary(run_path) that produces:
+
+A high‑level description of dataset size, date range (from data_profile.json if available), and the number of metrics and anomalies.
+
+The top three KPIs (biggest/smallest values) drawn from metrics.csv.
+
+A short call‑to‑action: which tabs to visit next and why.
+
+Only import data from existing JSON and CSV artifacts.
+
+Expose this summary function for reuse across tabs.
+
+2) Refactor Overview tab using render_run_summary
+
+Use the summary helper instead of raw JSON.
+
+Add a “Data Quality Highlights” section: missingness, skew flags, high‑cardinality fields (if data_profile.json exists).
+
+Move all raw JSON into a single expander labeled “Raw artifact data”.
+
+3) Key Findings tab: unify anomalies and interpretation
+
+Group anomalies by their underlying mechanism (e.g. multiple anomalies about units become one card with sub‑points).
+
+Show severity, brief description, evidence keys (which metrics support the anomaly), and a recommended next step.
+
+Follow with a concise interpretation summary that clearly states:
+
+what the anomalies suggest,
+
+what is ruled out (based on profiling/metrics), and
+
+whether further analysis is required.
+
+Use the same expander pattern for raw JSON.
+
+4) EDA tab: remove redundancy, emphasize highlights
+
+Merge the Data Profile summary and the profiling highlights into one coherent section called “EDA Highlights”.
+
+When eda_report.html exists, embed it under its own sub‑header.
+
+If eda_report.html is missing, show a callout explaining how to enable profiling (Python 3.12 + pip install -e '.[profiling]').
+
+Avoid repeating the same stats that appear in Overview.
+
+5) Metrics tab: enrich with insight and context
+
+Pre‑select the most important metrics (e.g. total revenue, average units, profit margin) and display them as a headline.
+
+Add a “Trends and Drivers” panel: let users choose a metric and time dimension (if available) to produce a simple trend line or bar chart using pandas + matplotlib.
+
+Keep the full DataFrame downloadable and hidden behind an expander.
+
+6) Prepare for LLM integration
+
+In the app/ folder, create a placeholder llm_utils.py with:
+
+a function load_llm_interpretation(run_path) that returns the contents of llm_interpretation.json if it exists, or None.
+
+a helper render_llm_summary(run_path) that uses Streamlit to display the structured LLM summary (claims, evidence, open questions) when available.
+
+Do not call external APIs or run LLMs—this is just plumbing for when llm_interpretation.json appears.
+
+7) Operationalize Ask & Explore
+
+Update the Ask tab to call a small helper script (analyst_agent ask --project <id> --question <q>) on the server side (use subprocess.run) and capture its output.
+
+If the question is answerable from artifacts, display the answer and list the evidence keys.
+
+If not, display the plan and generated code, and provide a “Download code” button.
+
+Wrap subprocess calls in try/except and show friendly error messages if the CLI fails or is unavailable.
+
+Keep the existing LLM stub intact for now, clearly marked as “LLM features coming soon”.
+
+8) Do not modify any engine code or artifact logic
+
+The engine must remain deterministic and test‑locked. You are only adding presentation and Q&A plumbing.
+
+9) After implementation
+
+Run streamlit run app/app.py and verify that each tab loads correctly and no exceptions occur.
+
+Commit and push to GitHub main as usual.
