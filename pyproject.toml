@@ -1,8 +1,34 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "repl-nix-workspace"
+name = "analyst-agent"
 version = "0.1.0"
-description = "Add your description here"
+description = "CLI-first Analyst Agent skeleton (SQLite-first, per-project session DB, ephemeral-by-default)"
+readme = "README.md"
 requires-python = ">=3.11"
+
 dependencies = [
-    "streamlit>=1.52.2",
+    "typer>=0.12",
+    "pydantic>=2.7",
+    "pandas>=2.0",
+    "matplotlib>=3.7",
+    "pytest",
+    "streamlit>=1.30",
+    "ydata-profiling>=4.18.0",
+    "setuptools>=80.9.0",
 ]
+
+[project.optional-dependencies]
+# Profiling is optional.
+# ydata-profiling does not yet support Python 3.14+.
+# It also requires setuptools at runtime (pkg_resources),
+# which is no longer guaranteed to be present in modern Python environments.
+profiling = [
+    "ydata-profiling>=4.0; python_version < '3.14'",
+    "setuptools>=68; python_version < '3.14'",
+]
+
+[project.scripts]
+analyst-agent = "analyst_agent.cli:app"

@@ -1,0 +1,4 @@
+order_id,order_date,region,sub_category,units,sales,profit
+ORD-1,2023-01-05,West,Binders,10,1000,80
+ORD-2,2023-02-05,West,Paper,10,1000,80
+ORD-3,2023-03-05,West,Chairs,10,1000,80

@@ -1,0 +1,4 @@
+order_id,customer,product,amount,order_date
+1,c1,p1,100,2024-01-01
+2,c2,p2,200,2024-01-02
+3,c3,p3,150,2024-01-03

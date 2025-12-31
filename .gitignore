@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Virtual environments
+.venv/
+env/
+venv/
+
+# SQLite / runtime artifacts
+*.db
+*.sqlite
+*.sqlite3
+
+# Generated outputs
+metrics.csv
+reproduce.sql
+logs/
+artifacts/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Local runs / generated artifacts
+projects/**/runs/
+projects/**/active_dataset.json
+projects/**/project.json
+
+# Repo hygiene patterns
+projects/**/datasets/
+**/__pycache__/
+.pytest_cache/
+
