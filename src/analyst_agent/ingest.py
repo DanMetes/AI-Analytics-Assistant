@@ -164,10 +164,10 @@ def _create_basic_indexes(conn: sqlite3.Connection, df: pd.DataFrame) -> List[st
 
     # Light indexing on the first 2 TEXT columns (heuristic)
     text_cols = [c for c in df.columns if _infer_sqlite_type(df.dtypes[c]) == "TEXT"]
-    for col in text_cols[:2]:
+    for idx, col in enumerate(text_cols[:2]):
         safe_col = _escape_sqlite_identifier(col)
-        safe_idx_name = col.replace('"', '').replace(' ', '_')
-        conn.execute(f'CREATE INDEX IF NOT EXISTS idx_data_{safe_idx_name} ON data({safe_col});')
+        safe_idx_name = _escape_sqlite_identifier(f"idx_data_text_{idx}")
+        conn.execute(f'CREATE INDEX IF NOT EXISTS {safe_idx_name} ON data({safe_col});')
         created.append(col)
 
     conn.commit()
