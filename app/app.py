@@ -351,12 +351,13 @@ def render_metrics(ctx: RunContext):
 
 
 def render_profiling_eda(ctx: RunContext):
-    """Profiling & EDA tab with merged highlights."""
+    """Profiling & EDA tab with summarized highlights."""
     import sys
     app_dir = Path(__file__).parent
     if str(app_dir) not in sys.path:
         sys.path.insert(0, str(app_dir))
     from ui_components.plots import render_plots
+    from ui_components.profile_utils import summarize_profile, load_profile_llm_summary
     
     st.header("Profiling & EDA")
     render_run_header(ctx)
@@ -364,54 +365,75 @@ def render_profiling_eda(ctx: RunContext):
     st.subheader("EDA Highlights")
     
     if ctx.data_profile:
-        rows = ctx.data_profile.get("rows", "N/A")
-        cols = ctx.data_profile.get("cols", "N/A")
-        columns = ctx.data_profile.get("columns", {})
+        summary = summarize_profile(ctx.data_profile)
         
-        total_missing = sum(
-            col_info.get("missing_count", 0) 
-            for col_info in columns.values()
-        ) if columns else 0
-        
-        total_cells = rows * cols if isinstance(rows, int) and isinstance(cols, int) else 0
-        missing_rate = (total_missing / total_cells * 100) if total_cells > 0 else 0
-        
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Rows", f"{rows:,}" if isinstance(rows, int) else rows)
-        with col2:
-            st.metric("Columns", cols)
-        with col3:
-            st.metric("Missing Cells", f"{total_missing:,}")
-        with col4:
-            st.metric("Missing Rate", f"{missing_rate:.2f}%")
-        
-        if columns:
-            numeric_cols = [name for name, info in columns.items() if info.get("dtype") in ["int", "float"]]
-            string_cols = [name for name, info in columns.items() if info.get("dtype") == "string"]
+        if summary.has_data:
+            highlights = []
             
-            st.markdown(f"**Column Types:** {len(numeric_cols)} numeric, {len(string_cols)} categorical")
+            if summary.top_missing:
+                highlights.append("**Most Missing Columns:**")
+                for col, pct in summary.top_missing:
+                    highlights.append(f"- `{col}`: {pct:.2f}% missing")
             
-            skewed_cols = [
-                (name, info.get("skew", 0))
-                for name, info in columns.items()
-                if info.get("skew_flag", False)
-            ]
-            if skewed_cols:
-                skewed_cols.sort(key=lambda x: abs(x[1]), reverse=True)
-                st.markdown("**Highly Skewed Columns:**")
-                for name, skew in skewed_cols[:3]:
+            if summary.top_skewed:
+                highlights.append("**Most Skewed Columns:**")
+                for col, skew in summary.top_skewed:
                     direction = "right" if skew > 0 else "left"
-                    st.markdown(f"- `{name}`: {skew:.2f} ({direction}-skewed)")
+                    highlights.append(f"- `{col}`: skew = {skew:.2f} ({direction})")
+            
+            if summary.top_correlations:
+                highlights.append("**Strongest Correlations:**")
+                for col_a, col_b, r in summary.top_correlations:
+                    highlights.append(f"- `{col_a}` ↔ `{col_b}`: r = {r:.3f}")
+            
+            if summary.high_cardinality:
+                highlights.append("**High-Cardinality Categoricals:**")
+                for col, card in summary.high_cardinality:
+                    highlights.append(f"- `{col}`: {card:,} unique values")
+            
+            if highlights:
+                st.markdown("\n".join(highlights))
+            else:
+                st.info("No notable data quality issues detected.")
+        else:
+            st.info("Profile data not available for highlights.")
     else:
-        st.info("Data profile not available for this run.")
+        st.warning("""
+**Data profile not available**
+
+The `data_profile.json` was not generated for this run.
+
+**How to enable profiling:**
+1. Ensure Python version is 3.11 or 3.12 (required by ydata-profiling)
+2. Install with: `pip install -e '.[profiling]'`
+3. Re-run the analysis
+        """)
+    
+    st.subheader("LLM Profile Synthesis")
+    llm_summary = load_profile_llm_summary(ctx.run_path)
+    if llm_summary:
+        claims = llm_summary.get("claims", [])
+        evidence = llm_summary.get("evidence", [])
+        
+        if claims:
+            st.markdown("**Key Claims:**")
+            for claim in claims:
+                st.markdown(f"- {claim}")
+        
+        if evidence:
+            st.markdown("**Supporting Evidence:**")
+            for ev in evidence:
+                st.markdown(f"- {ev}")
+    else:
+        st.info("LLM synthesis of profiling data will appear here when enabled via `--llm`.")
     
     st.subheader("Full Profiling Report")
     eda_html_path = ctx.run_path / "eda_report.html"
     if eda_html_path.exists():
-        with open(eda_html_path, "r", encoding="utf-8") as f:
-            html_content = f.read()
-        components.html(html_content, height=800, scrolling=True)
+        with st.expander("Full profiling report (ydata-profiling)", expanded=False):
+            with open(eda_html_path, "r", encoding="utf-8") as f:
+                html_content = f.read()
+            components.html(html_content, height=800, scrolling=True)
     else:
         st.warning("""
 **Profiling report not available**

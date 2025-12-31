@@ -58,6 +58,7 @@ projects/
 - `ui_components/findings.py`: Provides `normalize_and_group_anomalies()` for consolidating related anomalies with user-friendly labels, `render_anomaly_card()` for styled anomaly cards with severity/summary/cause/action, and `render_interpretation_bullets()` for interpretation display
 - `llm_utils.py`: Provides `load_llm_interpretation()`, `render_llm_interpretation()` for displaying LLM claims/evidence/questions, and `render_llm_placeholder()` for when LLM output is unavailable
 - `ask_engine.py`: Provides `run_ask_query()` CLI wrapper for analyst-agent ask command, returning answers with evidence or methodology plans with generated code
+- `ui_components/profile_utils.py`: Provides `summarize_profile(profile_json)` for extracting EDA highlights (top missing/skewed columns, correlations, high-cardinality categoricals) and `load_profile_llm_summary()` for LLM synthesis placeholder
 
 ## Dependencies
 See `pyproject.toml` for full dependency list. Key dependencies:
