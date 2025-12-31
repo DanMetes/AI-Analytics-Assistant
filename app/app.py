@@ -355,15 +355,49 @@ def render_profiling_eda(ctx: RunContext):
         sys.path.insert(0, str(app_dir))
     from ui_components.plots import render_plots
     from ui_components.profile_utils import summarize_profile
+    from style_utils import COLORS
     
     st.header("Profiling & EDA")
     render_run_header(ctx)
     
-    st.info("""
-**What is a profiling report?**
-A profiling report provides statistical summaries of your dataset including distributions, correlations, missing values, and data quality metrics. 
+    with st.expander("What is a profiling report?", expanded=False):
+        st.markdown("""
+A profiling report provides statistical summaries of your dataset including:
+- **Distributions**: How values are spread across columns
+- **Correlations**: Relationships between numeric variables  
+- **Missing Values**: Completeness of your data
+- **Data Quality**: Type consistency, outliers, and anomalies
+
 Use these insights to understand your data before analysis and identify potential issues.
-    """)
+        """)
+    
+    if ctx.data_profile:
+        columns_data = ctx.data_profile.get("columns", {})
+        numeric_cols = sum(1 for c in columns_data.values() if c.get("dtype") in ("int", "float"))
+        string_cols = sum(1 for c in columns_data.values() if c.get("dtype") == "string")
+        other_cols = len(columns_data) - numeric_cols - string_cols
+        
+        row_count = ctx.data_profile.get("row_count", 0) or 0
+        col_count = ctx.data_profile.get("column_count", len(columns_data)) or len(columns_data)
+        
+        total_missing = 0
+        for col_info in columns_data.values():
+            missing_frac = col_info.get("missing_fraction", 0) or 0
+            total_missing += missing_frac * row_count if row_count else 0
+        
+        total_cells = row_count * col_count
+        completeness = ((total_cells - total_missing) / total_cells * 100) if total_cells > 0 else 100
+        
+        st.subheader("Data Quality Summary")
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Completeness", f"{completeness:.1f}%", help="Percentage of non-missing cells")
+        with col2:
+            st.metric("Numeric Columns", numeric_cols, help="Columns with integer or float data")
+        with col3:
+            st.metric("Text Columns", string_cols, help="Columns with string/categorical data")
+        with col4:
+            st.metric("Other Types", other_cols, help="Date, boolean, or other column types")
     
     st.subheader("EDA Highlights")
     st.caption("Key data quality insights. Row/column counts shown in the header above.")
@@ -372,33 +406,39 @@ Use these insights to understand your data before analysis and identify potentia
         summary = summarize_profile(ctx.data_profile)
         
         if summary.has_data:
-            highlights = []
+            has_highlights = summary.top_missing or summary.top_skewed or summary.top_correlations or summary.high_cardinality
             
-            if summary.top_missing:
-                highlights.append("**Most Missing Columns:**")
-                for col, pct in summary.top_missing:
-                    highlights.append(f"- `{col}`: {pct:.2f}% missing")
-            
-            if summary.top_skewed:
-                highlights.append("**Most Skewed Columns:** _(Skew measures asymmetry in data distribution; positive = right tail, negative = left tail)_")
-                for col, skew in summary.top_skewed:
-                    direction = "right-skewed" if skew > 0 else "left-skewed"
-                    highlights.append(f"- `{col}`: skew = {skew:.2f} ({direction})")
-            
-            if summary.top_correlations:
-                highlights.append("**Strongest Correlations:**")
-                for col_a, col_b, r in summary.top_correlations:
-                    highlights.append(f"- `{col_a}` ↔ `{col_b}`: r = {r:.3f}")
-            
-            if summary.high_cardinality:
-                highlights.append("**High-Cardinality Categoricals:**")
-                for col, card in summary.high_cardinality:
-                    highlights.append(f"- `{col}`: {card:,} unique values")
-            
-            if highlights:
-                st.markdown("\n".join(highlights))
+            if has_highlights:
+                left_col, right_col = st.columns(2)
+                
+                with left_col:
+                    if summary.top_missing:
+                        st.markdown("**Missing Data**")
+                        for col, pct in summary.top_missing:
+                            severity_color = COLORS["critical"] if pct > 20 else COLORS["warning"] if pct > 5 else COLORS["info"]
+                            st.markdown(f"<span style='color:{severity_color}'>●</span> `{col}`: {pct:.1f}% missing", unsafe_allow_html=True)
+                    
+                    if summary.top_skewed:
+                        st.markdown("**Skewed Distributions**")
+                        st.caption("_Skew > 1 or < -1 indicates significant asymmetry_")
+                        for col, skew in summary.top_skewed:
+                            direction = "→" if skew > 0 else "←"
+                            st.markdown(f"- `{col}`: {direction} skew = {skew:.2f}")
+                
+                with right_col:
+                    if summary.top_correlations:
+                        st.markdown("**Strong Correlations**")
+                        for col_a, col_b, r in summary.top_correlations:
+                            strength = "strong" if abs(r) > 0.7 else "moderate"
+                            st.markdown(f"- `{col_a}` ↔ `{col_b}`: r = {r:.3f} ({strength})")
+                    
+                    if summary.high_cardinality:
+                        st.markdown("**High-Cardinality Fields**")
+                        st.caption("_Many unique values may need grouping or encoding_")
+                        for col, card in summary.high_cardinality:
+                            st.markdown(f"- `{col}`: {card:,} unique values")
             else:
-                st.info("No notable data quality issues detected.")
+                st.success("No notable data quality issues detected in this dataset.")
         else:
             st.info("Profile data not available for highlights.")
     else:
