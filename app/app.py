@@ -181,12 +181,12 @@ def render_overview(ctx: RunContext):
 
 
 def render_key_findings(ctx: RunContext):
-    """Key Findings tab with consolidated anomalies and interpretation."""
+    """Key Findings tab with causal narratives and consolidated anomalies."""
     import sys
     app_dir = Path(__file__).parent
     if str(app_dir) not in sys.path:
         sys.path.insert(0, str(app_dir))
-    from ui_components.findings import normalize_and_group_anomalies, render_anomaly_card, render_interpretation_bullets
+    from ui_components.findings import normalize_and_group_anomalies, render_anomaly_card, render_interpretation_bullets, generate_causal_narrative
     from llm_utils import render_llm_interpretation, render_llm_placeholder
     
     st.header("Key Findings")
@@ -207,31 +207,52 @@ def render_key_findings(ctx: RunContext):
         
         st.markdown(f"**{len(grouped_anomalies)} issue groups** detected ({critical_count} critical, {warning_count} warnings)")
         
+        st.subheader("Causal Analysis")
+        
+        for group in grouped_anomalies:
+            narrative_data = generate_causal_narrative(group, ctx.metrics_df, ctx.data_profile)
+            
+            severity = group["severity"]
+            if severity == "critical":
+                icon = "🔴"
+            elif severity == "warning":
+                icon = "🟠"
+            else:
+                icon = "🔵"
+            
+            metric_title = group["base_metric"].replace("_", " ").title()
+            period_label = f" ({group['time_period']})" if group["time_period"] != "overall" else ""
+            
+            st.markdown(f"**{icon} {metric_title}{period_label}**")
+            st.markdown(f"_{narrative_data['narrative']}_")
+            st.markdown(f"**Next step:** {narrative_data['next_action']}")
+            st.markdown("---")
+        
         run_id = ctx.run_path.name
-        for i, group in enumerate(grouped_anomalies):
-            render_anomaly_card(group, run_id, i)
+        with st.expander("Detailed Anomaly Cards", expanded=False):
+            for i, group in enumerate(grouped_anomalies):
+                render_anomaly_card(group, run_id, i)
     else:
         st.success("No anomalies detected in this analysis run.")
     
-    st.subheader("Interpretation Summary")
-    
-    if ctx.interpretation:
-        render_interpretation_bullets(ctx.interpretation)
-    else:
-        if anomaly_list:
-            st.info("Detailed interpretation not available. Review the anomaly cards above for findings.")
+    with st.expander("Technical details", expanded=False):
+        if ctx.interpretation:
+            render_interpretation_bullets(ctx.interpretation)
         else:
-            st.info("No interpretation available for this run.")
-    
-    if not render_llm_interpretation(ctx.run_path):
-        render_llm_placeholder()
-    
-    with st.expander("Raw anomaly data"):
+            if anomaly_list:
+                st.info("Detailed interpretation not available.")
+            else:
+                st.info("No interpretation available for this run.")
+        
         if ctx.anomalies:
+            st.markdown("**Raw Anomaly Data:**")
             st.json(ctx.anomalies)
         if ctx.interpretation:
             st.markdown("**Interpretation JSON:**")
             st.json(ctx.interpretation)
+    
+    if not render_llm_interpretation(ctx.run_path):
+        render_llm_placeholder()
 
 
 def render_metrics(ctx: RunContext):

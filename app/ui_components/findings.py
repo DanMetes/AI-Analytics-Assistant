@@ -263,3 +263,174 @@ def render_interpretation_bullets(interpretation: dict):
         with st.expander("Analysis caveats"):
             for caveat in caveats:
                 st.markdown(f"- ⚠️ {caveat}")
+
+
+def generate_causal_narrative(
+    group: Dict[str, Any],
+    metrics_df: Optional[Any] = None,
+    profile: Optional[Dict[str, Any]] = None
+) -> Dict[str, str]:
+    """
+    Generate a one-sentence causal narrative and recommended action for a grouped anomaly.
+    
+    Uses metrics and profile data to provide specific context about why the anomaly occurred.
+    
+    Args:
+        group: Grouped anomaly from normalize_and_group_anomalies()
+        metrics_df: Pandas DataFrame of metrics.csv (optional)
+        profile: data_profile.json dict (optional)
+    
+    Returns:
+        Dict with 'narrative' (one-sentence explanation) and 'next_action' (one specific action)
+    """
+    import re
+    
+    base_metric = group.get("base_metric", "metric")
+    time_period = group.get("time_period", "")
+    metrics_involved = group.get("metrics_involved", [])
+    pattern_label = group.get("pattern_label", "")
+    anomalies = group.get("anomalies", [])
+    
+    pattern_type = "mixed"
+    if "single-row spike" in pattern_label.lower() or "spike" in pattern_label.lower():
+        pattern_type = "single_row_spike"
+    elif "broad trend" in pattern_label.lower():
+        pattern_type = "broad_trend"
+    elif "average" in pattern_label.lower():
+        pattern_type = "average_shift"
+    elif "volume" in pattern_label.lower():
+        pattern_type = "volume_change"
+    
+    metrics_str = ", ".join(metrics_involved) if metrics_involved else base_metric
+    
+    anomaly_evidence = ""
+    max_ratio = 0
+    max_metric = ""
+    best_summary = ""
+    
+    for anomaly in anomalies:
+        summary = anomaly.get("summary", "")
+        metric = anomaly.get("metric", "")
+        value = anomaly.get("value")
+        
+        ratio_match = re.search(r'(\d+\.?\d*)\s*[×x]', summary, re.IGNORECASE)
+        if ratio_match:
+            try:
+                ratio = float(ratio_match.group(1))
+                if ratio > max_ratio:
+                    max_ratio = ratio
+                    max_metric = metric
+                    best_summary = summary
+            except ValueError:
+                pass
+        
+        pct_match = re.search(r'([+-]?\d+\.?\d*)\s*%', summary)
+        if pct_match and max_ratio == 0:
+            try:
+                pct = abs(float(pct_match.group(1)))
+                if pct > max_ratio:
+                    max_ratio = pct / 100 + 1 if pct > 0 else 1
+                    max_metric = metric
+                    best_summary = summary
+            except ValueError:
+                pass
+    
+    if max_ratio > 0 and max_metric:
+        anomaly_evidence = f"{max_metric} is {max_ratio:.1f}× the expected value"
+    elif anomalies:
+        top = anomalies[0]
+        metric = top.get("metric", base_metric)
+        value = top.get("value")
+        direction = top.get("direction", "")
+        threshold = top.get("threshold", {})
+        critical_thresh = threshold.get("critical")
+        warning_thresh = threshold.get("warning")
+        
+        if value is not None:
+            if isinstance(value, (int, float)):
+                if abs(value) >= 1000:
+                    val_str = f"{value:,.0f}"
+                elif isinstance(value, float):
+                    val_str = f"{value:.2f}"
+                else:
+                    val_str = str(value)
+                
+                if critical_thresh and value > critical_thresh:
+                    anomaly_evidence = f"{metric} = {val_str} (exceeds critical threshold of {critical_thresh})"
+                elif warning_thresh and value > warning_thresh:
+                    anomaly_evidence = f"{metric} = {val_str} (exceeds warning threshold of {warning_thresh})"
+                else:
+                    anomaly_evidence = f"{metric} = {val_str} ({direction})"
+            else:
+                anomaly_evidence = f"{metric} = {value} ({direction})"
+        else:
+            anomaly_evidence = f"{metric} deviation detected ({direction})"
+    
+    profile_context = ""
+    
+    if profile and "columns" in profile:
+        for col_name in [base_metric] + list(metrics_involved):
+            clean_col = col_name.replace("sum_", "").replace("avg_", "").replace("rate_", "")
+            col_profile = profile["columns"].get(clean_col, {})
+            if not col_profile:
+                continue
+                
+            max_val = col_profile.get("max")
+            p95_val = col_profile.get("p95")
+            skew_val = col_profile.get("skew")
+            mean_val = col_profile.get("mean")
+            
+            if max_val is not None and p95_val is not None and p95_val > 0 and max_val > p95_val * 10:
+                profile_context = f"the max {clean_col} ({max_val:,.0f}) is {max_val/p95_val:.0f}× the 95th percentile ({p95_val:,.1f})"
+                break
+            elif skew_val is not None and abs(skew_val) > 5:
+                direction = "right" if skew_val > 0 else "left"
+                profile_context = f"the {clean_col} distribution is heavily {direction}-skewed (skew={skew_val:.1f})"
+                break
+            elif max_val is not None and mean_val is not None and mean_val > 0 and max_val > mean_val * 100:
+                profile_context = f"the max {clean_col} ({max_val:,.0f}) is {max_val/mean_val:.0f}× the mean ({mean_val:,.1f})"
+                break
+    
+    evidence = profile_context or anomaly_evidence
+    
+    period_phrase = f" in {time_period}" if time_period and time_period != "overall" else ""
+    
+    if pattern_type == "single_row_spike":
+        if evidence:
+            narrative = f"A single outlier row is driving the {metrics_str} spike{period_phrase} — {evidence}."
+        else:
+            narrative = f"A small number of extreme values in {metrics_str} are driving the anomaly{period_phrase}, as the average deviation far exceeds the sum deviation."
+        next_action = f"Review the top 5 records by {base_metric}{period_phrase} and check for data entry errors or legitimate outliers."
+    
+    elif pattern_type == "broad_trend":
+        if evidence:
+            narrative = f"The {metrics_str} change{period_phrase} reflects a systematic shift across most records ({evidence})."
+        else:
+            narrative = f"The {metrics_str} change{period_phrase} reflects a systematic shift across most records, not isolated outliers."
+        next_action = f"Compare {base_metric} distributions between affected and baseline periods to identify the driver."
+    
+    elif pattern_type == "average_shift":
+        if evidence:
+            narrative = f"Per-record {metrics_str} values have shifted{period_phrase}; {evidence}."
+        else:
+            narrative = f"Average {metrics_str} has changed{period_phrase} without a proportional change in volume, suggesting per-record value changes."
+        next_action = f"Segment the data by category or region to identify which groups show the strongest {base_metric} shift."
+    
+    elif pattern_type == "volume_change":
+        if evidence:
+            narrative = f"Total {metrics_str} volume has changed significantly{period_phrase} ({evidence})."
+        else:
+            narrative = f"Total {metrics_str} volume has changed significantly{period_phrase}, possibly due to changes in record count or data completeness."
+        next_action = f"Check if the number of records{period_phrase} changed and whether any data sources were added or removed."
+    
+    else:
+        if evidence:
+            narrative = f"The {metrics_str} shows an unusual pattern{period_phrase} — {evidence}."
+        else:
+            narrative = f"The {metrics_str} metrics{period_phrase} show an unusual pattern requiring investigation."
+        next_action = f"Examine both individual high-value records and aggregate trends for {base_metric}."
+    
+    return {
+        "narrative": narrative,
+        "next_action": next_action
+    }
