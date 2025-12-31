@@ -430,133 +430,109 @@ Profiling provides detailed statistical summaries, correlations, and data qualit
     render_plots(ctx.run_path)
 
 
-def run_analyst_cli(project_id: str, question: str) -> dict:
-    """
-    Run the analyst_agent ask CLI command and capture output.
-    
-    Returns dict with:
-        - success: bool
-        - answer: str (if answerable)
-        - plan: str (if not directly answerable)
-        - code: str (generated code if any)
-        - error: str (if failed)
-    """
-    try:
-        result = subprocess.run(
-            ["python", "-m", "analyst_agent", "ask", "--project", project_id, "--question", question],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            cwd=str(Path(__file__).parent.parent)
-        )
-        
-        if result.returncode == 0:
-            output = result.stdout.strip()
-            return {
-                "success": True,
-                "answer": output,
-                "plan": None,
-                "code": None,
-                "error": None
-            }
-        else:
-            return {
-                "success": False,
-                "answer": None,
-                "plan": None,
-                "code": None,
-                "error": result.stderr.strip() or "Command failed"
-            }
-    except subprocess.TimeoutExpired:
-        return {
-            "success": False,
-            "answer": None,
-            "plan": None,
-            "code": None,
-            "error": "Request timed out after 30 seconds"
-        }
-    except FileNotFoundError:
-        return {
-            "success": False,
-            "answer": None,
-            "plan": None,
-            "code": None,
-            "error": "analyst_agent CLI not available"
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "answer": None,
-            "plan": None,
-            "code": None,
-            "error": str(e)
-        }
-
-
 def render_ask_explore(ctx: RunContext):
     """Ask & Explore tab with CLI integration."""
     import sys
     app_dir = Path(__file__).parent
     if str(app_dir) not in sys.path:
         sys.path.insert(0, str(app_dir))
-    from llm_utils import load_llm_interpretation, render_llm_summary, render_llm_placeholder
+    from llm_utils import load_llm_interpretation, render_llm_summary
+    from ask_engine import run_ask_query, AskResult
     
     st.header("Ask & Explore")
     render_run_header(ctx)
     
-    if not render_llm_summary(ctx.run_path):
-        render_llm_placeholder()
+    st.info("""
+**LLM Q&A features coming soon**
+
+Advanced natural language Q&A powered by LLM will be available when running with `--llm` flag.
+Currently, questions are answered using existing analysis artifacts.
+    """)
     
     st.subheader("Ask a Question")
     st.markdown("Query the analysis artifacts using natural language.")
     
     question = st.text_input(
         "Enter your question:",
-        placeholder="e.g., What caused the spike in units for 2023?"
+        placeholder="e.g., What caused the spike in units for 2023?",
+        key=f"ask_question_{ctx.run_path.name}"
     )
     
     project_id = ctx.run_path.parent.parent.name
     
     col1, col2 = st.columns([1, 4])
     with col1:
-        submit = st.button("Submit", type="primary")
+        submit = st.button("Submit", type="primary", key=f"ask_submit_{ctx.run_path.name}")
     
     if submit and question:
         with st.spinner("Processing your question..."):
-            result = run_analyst_cli(project_id, question)
+            result = run_ask_query(project_id, question, use_llm=False, timeout=60)
         
-        if result["success"] and result["answer"]:
-            st.success("Answer found:")
-            st.markdown(result["answer"])
-            
-            if result.get("evidence_keys"):
-                st.markdown("**Evidence:**")
-                for key in result["evidence_keys"]:
-                    st.markdown(f"- `{key}`")
-        elif result["error"]:
-            if "not available" in result["error"].lower():
-                st.info("""
+        if result.success:
+            if result.answerable:
+                st.success("Answer found from existing artifacts:")
+                st.markdown(result.answer)
+                
+                if result.evidence_keys:
+                    st.markdown("**Supporting Evidence:**")
+                    for key in result.evidence_keys:
+                        st.markdown(f"- `{key}`")
+            else:
+                st.warning("This question cannot be answered from existing artifacts. A methodology plan has been generated.")
+                
+                if result.plan_steps:
+                    st.markdown("**Methodology Plan:**")
+                    for i, step in enumerate(result.plan_steps, 1):
+                        st.markdown(f"{i}. {step}")
+                elif result.plan:
+                    st.markdown("**Methodology Plan:**")
+                    st.markdown(result.plan)
+                
+                if result.code:
+                    st.markdown("**Generated Python Code:**")
+                    st.code(result.code, language="python")
+                    
+                    st.download_button(
+                        label="Download Code",
+                        data=result.code,
+                        file_name="generated_query.py",
+                        mime="text/x-python",
+                        key=f"download_code_{ctx.run_path.name}"
+                    )
+        else:
+            if "not installed" in (result.error or "").lower() or "not in path" in (result.error or "").lower():
+                st.error("""
 **CLI not available**
 
-The analyst_agent CLI is not installed or configured. 
-LLM-powered Q&A features are coming soon.
+The analyst-agent CLI is not installed or configured.
+Please ensure the package is installed with: `pip install -e .`
+                """)
+            elif "no active dataset" in (result.error or "").lower():
+                st.error("""
+**No dataset configured**
+
+This project doesn't have an active dataset. Please configure a dataset before asking questions.
+                """)
+            elif "no runs found" in (result.error or "").lower() or "no analysis runs" in (result.error or "").lower():
+                st.error("""
+**No analysis runs found**
+
+Please run an analysis first using: `analyst-agent run --project <project_id>`
+                """)
+            elif "project" in (result.error or "").lower() and "not found" in (result.error or "").lower():
+                st.error(f"Project not found: `{project_id}`")
+            elif "timeout" in (result.error or "").lower():
+                st.warning("""
+**Request timed out**
+
+The question is taking longer than expected to process. Try a simpler question or wait and try again.
                 """)
             else:
-                st.warning(f"Could not process question: {result['error']}")
+                st.error(f"Error processing question: {result.error}")
             
-            if result.get("plan"):
-                st.markdown("**Suggested approach:**")
-                st.markdown(result["plan"])
-            
-            if result.get("code"):
-                st.markdown("**Generated code:**")
-                st.code(result["code"], language="python")
-                st.download_button(
-                    label="Download code",
-                    data=result["code"],
-                    file_name="generated_query.py",
-                    mime="text/x-python"
-                )
+            if result.raw_output:
+                with st.expander("Technical details"):
+                    st.code(result.raw_output, language="text")
     elif submit:
         st.error("Please enter a question.")
     

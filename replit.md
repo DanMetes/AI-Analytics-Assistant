@@ -57,6 +57,7 @@ projects/
 - `ui_components/plots.py`: Provides `render_plots(run_path)` for plot rendering with deduplication, category grouping, and selection UI (Select Plot / Grid View modes)
 - `ui_components/findings.py`: Provides `normalize_and_group_anomalies()` for consolidating related anomalies with user-friendly labels, `render_anomaly_card()` for styled anomaly cards with severity/summary/cause/action, and `render_interpretation_bullets()` for interpretation display
 - `llm_utils.py`: Provides `load_llm_interpretation()`, `render_llm_interpretation()` for displaying LLM claims/evidence/questions, and `render_llm_placeholder()` for when LLM output is unavailable
+- `ask_engine.py`: Provides `run_ask_query()` CLI wrapper for analyst-agent ask command, returning answers with evidence or methodology plans with generated code
 
 ## Dependencies
 See `pyproject.toml` for full dependency list. Key dependencies:
