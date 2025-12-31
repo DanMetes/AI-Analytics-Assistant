@@ -80,13 +80,98 @@ def render_llm_summary(run_path: Path) -> bool:
     return True
 
 
+def render_llm_interpretation(run_path: Path) -> bool:
+    """
+    Render the LLM interpretation for the Key Findings tab.
+    
+    Displays claims with evidence references, open questions,
+    and recommended next analyses in a user-friendly format.
+    
+    Args:
+        run_path: Path to the run directory
+        
+    Returns:
+        True if LLM interpretation was found and rendered, False otherwise.
+    """
+    interpretation = load_llm_interpretation(run_path)
+    
+    if interpretation is None:
+        return False
+    
+    st.markdown("---")
+    st.subheader("LLM-Enhanced Interpretation")
+    
+    if "summary" in interpretation:
+        st.markdown(f"**Summary:** {interpretation['summary']}")
+    
+    if "claims" in interpretation and interpretation["claims"]:
+        st.markdown("**Claims:**")
+        for i, claim in enumerate(interpretation["claims"], 1):
+            confidence = claim.get("confidence", 0)
+            if confidence >= 0.8:
+                conf_label = "High confidence"
+                conf_color = "#28a745"
+            elif confidence >= 0.5:
+                conf_label = "Medium confidence"
+                conf_color = "#ffc107"
+            else:
+                conf_label = "Low confidence"
+                conf_color = "#dc3545"
+            
+            statement = claim.get("statement", "No statement")
+            evidence_refs = claim.get("evidence", [])
+            
+            st.markdown(f"""
+<div style="border-left: 3px solid {conf_color}; padding: 8px 12px; margin: 8px 0; background: rgba(0,0,0,0.03); border-radius: 4px;">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <strong>{i}. {statement}</strong>
+        <span style="font-size: 0.8em; color: {conf_color}; background: rgba(0,0,0,0.05); padding: 2px 8px; border-radius: 10px;">{conf_label} ({confidence:.0%})</span>
+    </div>
+</div>
+            """, unsafe_allow_html=True)
+            
+            if evidence_refs:
+                with st.expander(f"Evidence references ({len(evidence_refs)})"):
+                    for ref in evidence_refs:
+                        if isinstance(ref, dict):
+                            key = ref.get("key", "")
+                            value = ref.get("value", "")
+                            source = ref.get("source", "")
+                            st.markdown(f"- **{key}**: `{value}` _(from {source})_")
+                        else:
+                            st.markdown(f"- `{ref}`")
+    
+    if "open_questions" in interpretation and interpretation["open_questions"]:
+        st.markdown("**Open Questions:**")
+        st.markdown("_These questions remain unanswered and may warrant further analysis:_")
+        for question in interpretation["open_questions"]:
+            st.markdown(f"- {question}")
+    
+    if "recommended_analyses" in interpretation and interpretation["recommended_analyses"]:
+        st.markdown("**Recommended Next Analyses:**")
+        for rec in interpretation["recommended_analyses"]:
+            if isinstance(rec, dict):
+                title = rec.get("title", "Analysis")
+                description = rec.get("description", "")
+                priority = rec.get("priority", "medium")
+                priority_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(priority, "⚪")
+                st.markdown(f"- {priority_icon} **{title}**: {description}")
+            else:
+                st.markdown(f"- {rec}")
+    
+    if "generated_at" in interpretation:
+        st.caption(f"LLM interpretation generated: {interpretation['generated_at']}")
+    
+    return True
+
+
 def render_llm_placeholder():
     """Render a placeholder for LLM features when not available."""
     st.info("""
-    **LLM-Powered Insights Coming Soon**
-    
-    When the analytics engine produces `llm_interpretation.json`, this section will display:
-    - AI-generated claims with confidence scores
-    - Supporting evidence from your data
-    - Open questions for further investigation
+**LLM interpretation not available**
+
+Run the analysis with `--llm` flag to generate AI-powered insights including:
+- Claims with confidence scores and evidence references
+- Open questions for further investigation
+- Recommended next analyses
     """)

@@ -187,6 +187,7 @@ def render_key_findings(ctx: RunContext):
     if str(app_dir) not in sys.path:
         sys.path.insert(0, str(app_dir))
     from ui_components.findings import normalize_and_group_anomalies, render_anomaly_card, render_interpretation_bullets
+    from llm_utils import render_llm_interpretation, render_llm_placeholder
     
     st.header("Key Findings")
     render_run_header(ctx)
@@ -221,6 +222,9 @@ def render_key_findings(ctx: RunContext):
             st.info("Detailed interpretation not available. Review the anomaly cards above for findings.")
         else:
             st.info("No interpretation available for this run.")
+    
+    if not render_llm_interpretation(ctx.run_path):
+        render_llm_placeholder()
     
     with st.expander("Raw anomaly data"):
         if ctx.anomalies:
