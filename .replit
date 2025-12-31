@@ -1,4 +1,4 @@
-modules = ["python-3.12"]
+modules = ["python-3.11"]
 
 run = "streamlit run app/app.py --server.port 5000"
 
@@ -37,3 +37,6 @@ packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "
 [[ports]]
 localPort = 5000
 externalPort = 80
+
+[agent]
+integrations = ["python_openai_ai_integrations:1.0.0"]

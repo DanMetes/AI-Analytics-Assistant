@@ -1,9 +1,10 @@
-"""Ask Engine - CLI wrapper for analyst-agent ask command."""
+"""Ask Engine - CLI wrapper for analyst-agent ask command and LLM Q&A."""
 import subprocess
 import json
 import re
+import os
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 
 
@@ -277,3 +278,139 @@ def run_ask_query(project_id: str, question: str, use_llm: bool = False, timeout
             answerable=False,
             error=f"Unexpected error: {str(e)}"
         )
+
+
+def is_llm_available() -> bool:
+    """Check if LLM API is available via environment variables."""
+    api_key = os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    return bool(api_key)
+
+
+def run_llm_ask(question: str, context: Dict[str, Any]) -> Tuple[Optional[str], Optional[list]]:
+    """
+    Ask a question using LLM with artifact context.
+    
+    Args:
+        question: The user's question
+        context: Dictionary containing artifact summaries (metrics, anomalies, profile)
+        
+    Returns:
+        Tuple of (answer, references) where references are artifact keys used
+    """
+    api_key = os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    base_url = os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL")
+    
+    if not api_key:
+        return None, None
+    
+    try:
+        from openai import OpenAI
+        
+        client_kwargs = {"api_key": api_key}
+        if base_url:
+            client_kwargs["base_url"] = base_url
+        
+        client = OpenAI(**client_kwargs)
+        
+        context_str = ""
+        if context.get("metrics_summary"):
+            context_str += f"\n## Metrics Summary\n{context['metrics_summary']}\n"
+        if context.get("anomalies_summary"):
+            context_str += f"\n## Anomalies Detected\n{context['anomalies_summary']}\n"
+        if context.get("profile_summary"):
+            context_str += f"\n## Data Profile\n{context['profile_summary']}\n"
+        
+        system_prompt = """You are an AI analytics assistant helping users understand their data analysis results.
+You have access to analysis artifacts including metrics, anomalies, and data profiles.
+Provide concise, actionable answers based on the context provided.
+When referencing specific metrics or findings, mention the source artifact.
+If you cannot answer from the provided context, say so clearly."""
+        
+        user_prompt = f"""Based on the following analysis context, answer the user's question.
+
+{context_str}
+
+User's Question: {question}
+
+Provide a clear, concise answer. If referencing specific data, cite the source (e.g., "from metrics", "from anomalies")."""
+        
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            max_tokens=500,
+            temperature=0.3
+        )
+        
+        answer = response.choices[0].message.content
+        references = []
+        if "metrics" in answer.lower():
+            references.append("metrics.csv")
+        if "anomal" in answer.lower():
+            references.append("anomalies_normalized.json")
+        if "profile" in answer.lower() or "distribution" in answer.lower():
+            references.append("data_profile.json")
+        
+        return answer, references if references else None
+        
+    except Exception as e:
+        return f"Error: {str(e)}", None
+
+
+def build_llm_context(run_path: Path) -> Dict[str, Any]:
+    """Build context dictionary from run artifacts for LLM Q&A."""
+    context = {}
+    
+    metrics_path = run_path / "metrics.csv"
+    if metrics_path.exists():
+        try:
+            import pandas as pd
+            df = pd.read_csv(metrics_path)
+            summary_lines = []
+            for section in df["section"].unique()[:3]:
+                section_df = df[df["section"] == section]
+                summary_lines.append(f"Section: {section}")
+                for _, row in section_df.head(5).iterrows():
+                    summary_lines.append(f"  - {row['key']}: {row['value']}")
+            context["metrics_summary"] = "\n".join(summary_lines[:20])
+        except Exception:
+            pass
+    
+    anomalies_path = run_path / "anomalies_normalized.json"
+    if anomalies_path.exists():
+        try:
+            with open(anomalies_path, "r") as f:
+                data = json.load(f)
+            anomalies = data.get("anomalies", []) if isinstance(data, dict) else data
+            summary_lines = []
+            for a in anomalies[:5]:
+                severity = a.get("severity", "unknown")
+                metric = a.get("metric", "unknown")
+                summary = a.get("summary", "")
+                summary_lines.append(f"- [{severity}] {metric}: {summary}")
+            context["anomalies_summary"] = "\n".join(summary_lines)
+        except Exception:
+            pass
+    
+    profile_path = run_path / "data_profile.json"
+    if profile_path.exists():
+        try:
+            with open(profile_path, "r") as f:
+                profile = json.load(f)
+            summary_lines = []
+            if "row_count" in profile:
+                summary_lines.append(f"Rows: {profile['row_count']}")
+            if "column_count" in profile:
+                summary_lines.append(f"Columns: {profile['column_count']}")
+            if "columns" in profile:
+                for col_name, col_data in list(profile["columns"].items())[:5]:
+                    if isinstance(col_data, dict):
+                        col_type = col_data.get("dtype", "unknown")
+                        summary_lines.append(f"  - {col_name} ({col_type})")
+            context["profile_summary"] = "\n".join(summary_lines)
+        except Exception:
+            pass
+    
+    return context
