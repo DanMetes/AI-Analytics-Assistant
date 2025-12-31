@@ -22,8 +22,10 @@ A product-grade Streamlit-based artifact viewer for the AI Analytics platform. T
 - **Overview Tab**: Curated run summary with top KPIs, Data Quality Highlights (missingness, high-cardinality, skew flags), recommended next steps
 - **Key Findings Tab**: Anomalies grouped by mechanism (units, sales, profit), severity-sorted cards (Critical/Warning/Info), unified interpretation summary
 - **Metrics Tab**: Headline KPIs, Trends and Drivers panel with matplotlib bar charts, group-by/metric dropdowns, CSV download
-- **Profiling & EDA Tab**: EDA Highlights section, embedded ydata-profiling HTML report, generated plots, clear callout for missing reports
-- **Ask & Explore Tab**: CLI subprocess integration for artifact queries, LLM placeholder for future Q&A features
+- **Profiling & EDA Tab**: EDA Highlights with 3 sub-tabs (Top Categories, Distributions, Correlations), distribution stats table with P05/Median/Mean/P95/StdDev, cardinality fallback when value counts unavailable, embedded ydata-profiling HTML report, generated plots, clear callout for missing reports
+- **Ask & Explore Tab**: CLI subprocess integration for artifact queries, mode indicators (Deterministic Mode vs AI-Powered Mode), LLM placeholder for future Q&A features
+- **Metrics Tab Top Drivers**: Section-aware driver analysis with bar charts, properly extracts group values from dimension=value keys, smart fallback to first *_summary section
+- **Summary Report**: Comprehensive downloadable report with data quality highlights, correlations, categorical cardinality, and numeric distributions
 
 ## Running the App
 ```bash
@@ -58,7 +60,8 @@ projects/
 - `ui_components/findings.py`: Provides `normalize_and_group_anomalies()` for consolidating related anomalies with user-friendly labels, `render_anomaly_card()` for styled anomaly cards, `render_interpretation_bullets()` for interpretation display, and `generate_causal_narrative()` for one-sentence explanations of anomaly causes with next actions
 - `llm_utils.py`: Provides `load_llm_interpretation()`, `render_llm_interpretation()` for displaying LLM claims/evidence/questions, and `render_llm_placeholder()` for when LLM output is unavailable
 - `ask_engine.py`: Provides `run_ask(project_id, run_id, question)` returning (answer, plan, code, evidence_keys) tuple, and `run_ask_query()` CLI wrapper for analyst-agent ask command
-- `ui_components/profile_utils.py`: Provides `summarize_profile(profile_json)` for extracting EDA highlights (top missing/skewed columns, correlations, high-cardinality categoricals)
+- `ui_components/profile_utils.py`: Provides `summarize_profile(profile_json)` for extracting EDA highlights (top missing/skewed columns, correlations, high-cardinality categoricals), `DistributionStats` dataclass for numeric column distribution stats (p05, median, p95, mean, std_dev), `get_distribution_stats()` for robust percentile extraction, and `get_top_categories()` for categorical value counts
+- `ui_components/metrics.py`: Provides `render_kpi_dashboard()` for headline KPIs with trend charts, `render_top_drivers()` for section-aware top driver analysis with bar charts, `render_metrics_glossary()` for metric definitions
 
 ## LLM Workflow
 
