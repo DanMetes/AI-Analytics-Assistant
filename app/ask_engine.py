@@ -205,11 +205,13 @@ def run_ask_query(project_id: str, question: str, use_llm: bool = False, timeout
     cmd = [
         "analyst-agent", "ask",
         "--project", project_id,
-        "--question", question.strip()
+        "--question", question.strip(),
     ]
     
     if not use_llm:
         cmd.append("--no-llm")
+    
+    cmd.append("--")  # End of options marker to prevent argument injection
     
     try:
         result = subprocess.run(
