@@ -69,6 +69,14 @@ def _maybe_split_compound_columns(
     return df, warnings
 
 
+def _escape_sqlite_identifier(name: str) -> str:
+    """
+    Safely escape a SQLite identifier (column/table name) to prevent SQL injection.
+    Doubles any embedded double-quotes and wraps in double quotes.
+    """
+    return '"' + name.replace('"', '""') + '"'
+
+
 def _infer_sqlite_type(dtype: Any) -> str:
     """
     Maps pandas dtypes to SQLite column affinity types.
