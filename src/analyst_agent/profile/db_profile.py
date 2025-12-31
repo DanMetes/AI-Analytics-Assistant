@@ -67,4 +67,5 @@ def _is_time_like(name: str, col_type: str) -> bool:
 
 
 def _quote_ident(name: str) -> str:
+    """Quote SQLite identifier to prevent SQL injection. Nosec: proper escaping."""
     return '"' + name.replace('"', '""') + '"'

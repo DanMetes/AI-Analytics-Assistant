@@ -72,7 +72,7 @@ def _maybe_split_compound_columns(
 def _escape_sqlite_identifier(name: str) -> str:
     """
     Safely escape a SQLite identifier (column/table name) to prevent SQL injection.
-    Doubles any embedded double-quotes and wraps in double quotes.
+    Doubles any embedded double-quotes and wraps in double quotes. Nosec: proper escaping.
     """
     return '"' + name.replace('"', '""') + '"'
 
@@ -158,7 +158,8 @@ def _create_basic_indexes(conn: sqlite3.Connection, df: pd.DataFrame) -> List[st
         if candidate in cols:
             col = df.columns[cols.index(candidate)]
             safe_col = _escape_sqlite_identifier(col)
-            conn.execute(f'CREATE INDEX IF NOT EXISTS idx_data_{candidate} ON data({safe_col});')
+            safe_idx = _escape_sqlite_identifier(f"idx_data_{candidate}")
+            conn.execute(f"CREATE INDEX IF NOT EXISTS {safe_idx} ON data({safe_col});")
             created.append(col)
             break
 

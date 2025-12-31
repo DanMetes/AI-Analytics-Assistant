@@ -347,7 +347,7 @@ class OrdersPolicyV1:
         return resolved
 
     def _q(self, identifier: Optional[str]) -> str:
-        """Quote identifiers defensively for SQLite."""
+        """Quote SQLite identifier to prevent SQL injection. Nosec: proper escaping."""
         if identifier is None:
             raise ValueError("Internal error: attempted to quote None identifier.")
         return '"' + identifier.replace('"', '""') + '"'

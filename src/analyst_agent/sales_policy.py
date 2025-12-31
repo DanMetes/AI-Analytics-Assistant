@@ -280,4 +280,5 @@ class SalesPolicyV1:
         return resolved
 
     def _q(self, identifier: str) -> str:
+        """Quote SQLite identifier to prevent SQL injection. Nosec: proper escaping."""
         return '"' + identifier.replace('"', '""') + '"'
