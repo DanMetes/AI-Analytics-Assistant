@@ -8,18 +8,16 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from collections import defaultdict
 
+import os
+
 st.set_page_config(
     page_title="AI Analytics Assistant",
     page_icon="📊",
     layout="wide"
 )
 
-try:
-    APP_USER = st.secrets.get("app_user", "admin")
-    APP_PASS = st.secrets.get("app_pass", "password")
-except Exception:
-    APP_USER = "admin"
-    APP_PASS = "password"
+APP_USER = os.environ.get("app_user", "admin")
+APP_PASS = os.environ.get("app_pass", "password")
 
 def check_login():
     """Simple username/password authentication."""

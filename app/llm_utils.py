@@ -20,15 +20,12 @@ def get_openai_api_key() -> Optional[str]:
     Get OpenAI API key with user-provided key taking priority.
     
     Priority order:
-    1. st.secrets["OPENAI_API_KEY"] - user-configured secret
-    2. os.environ["OPENAI_API_KEY"] - environment variable
-    3. os.environ["AI_INTEGRATIONS_OPENAI_API_KEY"] - Replit integration (fallback)
+    1. os.environ["OPENAI_API_KEY"] - environment variable (Replit secrets)
+    2. os.environ["AI_INTEGRATIONS_OPENAI_API_KEY"] - Replit integration (fallback)
     
     Returns:
         API key string or None if not configured.
     """
-    if hasattr(st, 'secrets') and "OPENAI_API_KEY" in st.secrets:
-        return st.secrets["OPENAI_API_KEY"]
     if os.environ.get("OPENAI_API_KEY"):
         return os.environ.get("OPENAI_API_KEY")
     return os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY")
@@ -36,8 +33,6 @@ def get_openai_api_key() -> Optional[str]:
 
 def get_openai_base_url() -> Optional[str]:
     """Get OpenAI base URL if configured."""
-    if hasattr(st, 'secrets') and "OPENAI_BASE_URL" in st.secrets:
-        return st.secrets["OPENAI_BASE_URL"]
     if os.environ.get("OPENAI_BASE_URL"):
         return os.environ.get("OPENAI_BASE_URL")
     return os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL")
