@@ -257,6 +257,12 @@ def render_key_findings(ctx: RunContext):
 
 def render_metrics(ctx: RunContext):
     """Metrics tab with headline KPIs and Trends/Drivers panel."""
+    import sys
+    app_dir = Path(__file__).parent
+    if str(app_dir) not in sys.path:
+        sys.path.insert(0, str(app_dir))
+    from ui_components.metrics import render_kpi_dashboard, render_metrics_glossary
+    
     st.header("Metrics")
     render_run_header(ctx)
     
@@ -267,41 +273,9 @@ def render_metrics(ctx: RunContext):
     df = ctx.metrics_df
     
     st.subheader("Headline KPIs")
+    st.caption("Key performance indicators summarizing your data. Hover over metrics for definitions.")
     
-    time_summary = df[df["section"] == "time_summary"].copy()
-    overall = df[df["section"] == "overall"].copy()
-    
-    kpi_data = {}
-    
-    if not overall.empty:
-        row_count_row = overall[overall["key"] == "row_count"]
-        if not row_count_row.empty:
-            kpi_data["Total Rows"] = (int(float(row_count_row["value"].iloc[0])), "count")
-    
-    if not time_summary.empty:
-        for metric_key in ["sum_sales", "sum_profit", "sum_units"]:
-            metric_rows = time_summary[time_summary["key"].str.contains(metric_key)]
-            if not metric_rows.empty:
-                total = metric_rows["value"].astype(float).sum()
-                label = metric_key.replace("sum_", "Total ").replace("_", " ").title()
-                metric_type = "currency" if metric_key in ["sum_sales", "sum_profit"] else "count"
-                kpi_data[label] = (total, metric_type)
-        
-        margin_rows = time_summary[time_summary["key"].str.contains("profit_margin")]
-        if not margin_rows.empty:
-            avg_margin = margin_rows["value"].astype(float).mean()
-            kpi_data["Avg Profit Margin"] = (avg_margin, "percent")
-    
-    if kpi_data:
-        kpi_cols = st.columns(min(len(kpi_data), 5))
-        for i, (label, (value, metric_type)) in enumerate(list(kpi_data.items())[:5]):
-            with kpi_cols[i]:
-                if metric_type == "currency":
-                    st.metric(label, f"${value:,.0f}")
-                elif metric_type == "percent":
-                    st.metric(label, f"{value:.1%}")
-                else:
-                    st.metric(label, f"{value:,.0f}")
+    render_kpi_dashboard(df, ctx.run_path.name)
     
     st.subheader("Trends and Drivers")
     
@@ -369,6 +343,8 @@ def render_metrics(ctx: RunContext):
             file_name="metrics.csv",
             mime="text/csv"
         )
+    
+    render_metrics_glossary(df, ctx.analysis_plan)
 
 
 def render_profiling_eda(ctx: RunContext):
@@ -383,7 +359,14 @@ def render_profiling_eda(ctx: RunContext):
     st.header("Profiling & EDA")
     render_run_header(ctx)
     
+    st.info("""
+**What is a profiling report?**
+A profiling report provides statistical summaries of your dataset including distributions, correlations, missing values, and data quality metrics. 
+Use these insights to understand your data before analysis and identify potential issues.
+    """)
+    
     st.subheader("EDA Highlights")
+    st.caption("Key data quality insights. Row/column counts shown in the header above.")
     
     if ctx.data_profile:
         summary = summarize_profile(ctx.data_profile)
@@ -397,9 +380,9 @@ def render_profiling_eda(ctx: RunContext):
                     highlights.append(f"- `{col}`: {pct:.2f}% missing")
             
             if summary.top_skewed:
-                highlights.append("**Most Skewed Columns:**")
+                highlights.append("**Most Skewed Columns:** _(Skew measures asymmetry in data distribution; positive = right tail, negative = left tail)_")
                 for col, skew in summary.top_skewed:
-                    direction = "right" if skew > 0 else "left"
+                    direction = "right-skewed" if skew > 0 else "left-skewed"
                     highlights.append(f"- `{col}`: skew = {skew:.2f} ({direction})")
             
             if summary.top_correlations:
@@ -576,6 +559,182 @@ The question is taking longer than expected to process. Try a simpler question o
                 st.markdown(f"- `{artifact}`")
 
 
+def render_home(ctx: RunContext):
+    """Home tab with welcome content and getting started guide."""
+    import sys
+    app_dir = Path(__file__).parent
+    if str(app_dir) not in sys.path:
+        sys.path.insert(0, str(app_dir))
+    from home_content import WELCOME_TITLE, WELCOME_INTRO, TAB_DESCRIPTIONS, HOW_TO_READ, GET_STARTED, ABOUT_ENGINE
+    from style_utils import COLORS
+    
+    st.header(f"Welcome to {WELCOME_TITLE}")
+    
+    st.markdown(WELCOME_INTRO)
+    
+    project_id = ctx.run_path.parent.parent.name
+    run_id = ctx.run_path.name
+    
+    st.success(f"**Currently viewing:** Project `{project_id[:12]}...` / Run `{run_id[:12]}...`")
+    
+    st.markdown(TAB_DESCRIPTIONS)
+    st.markdown(HOW_TO_READ)
+    st.markdown(GET_STARTED)
+    st.markdown(ABOUT_ENGINE)
+
+
+def render_summary_report(ctx: RunContext):
+    """Summary Report tab with downloadable one-page narrative."""
+    import sys
+    from datetime import datetime
+    app_dir = Path(__file__).parent
+    if str(app_dir) not in sys.path:
+        sys.path.insert(0, str(app_dir))
+    from style_utils import format_currency, format_number, format_percent
+    from ui_components.findings import normalize_and_group_anomalies, generate_causal_narrative
+    from ui_components.profile_utils import summarize_profile
+    from llm_utils import load_llm_interpretation, load_profile_llm_summary
+    
+    st.header("Summary Report")
+    render_run_header(ctx)
+    
+    st.markdown("Generate a downloadable summary combining key insights from your analysis.")
+    
+    project_id = ctx.run_path.parent.parent.name
+    run_id = ctx.run_path.name
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    
+    report_lines = []
+    report_lines.append(f"# AI Analytics Summary Report")
+    report_lines.append(f"")
+    report_lines.append(f"**Project:** `{project_id}`")
+    report_lines.append(f"**Run:** `{run_id}`")
+    report_lines.append(f"**Generated:** {timestamp}")
+    report_lines.append(f"")
+    report_lines.append(f"---")
+    report_lines.append(f"")
+    
+    report_lines.append(f"## Key Metrics")
+    report_lines.append(f"")
+    
+    if ctx.metrics_df is not None and not ctx.metrics_df.empty:
+        df = ctx.metrics_df
+        overall = df[df["section"] == "overall"]
+        time_summary = df[df["section"] == "time_summary"]
+        
+        if not overall.empty:
+            row_count_row = overall[overall["key"] == "row_count"]
+            if not row_count_row.empty:
+                report_lines.append(f"- **Total Rows:** {int(float(row_count_row['value'].iloc[0])):,}")
+        
+        if not time_summary.empty:
+            for metric_key in ["sum_sales", "sum_profit", "sum_units"]:
+                metric_rows = time_summary[time_summary["key"].str.contains(metric_key)]
+                if not metric_rows.empty:
+                    total = metric_rows["value"].astype(float).sum()
+                    label = metric_key.replace("sum_", "Total ").replace("_", " ").title()
+                    if "sales" in metric_key or "profit" in metric_key:
+                        report_lines.append(f"- **{label}:** ${total:,.0f}")
+                    else:
+                        report_lines.append(f"- **{label}:** {total:,.0f}")
+    else:
+        report_lines.append("_No metrics available._")
+    
+    report_lines.append(f"")
+    report_lines.append(f"## Key Findings")
+    report_lines.append(f"")
+    
+    anomaly_list = []
+    if ctx.anomalies:
+        if isinstance(ctx.anomalies, dict) and "anomalies" in ctx.anomalies:
+            anomaly_list = ctx.anomalies.get("anomalies", [])
+        elif isinstance(ctx.anomalies, list):
+            anomaly_list = ctx.anomalies
+    
+    if anomaly_list:
+        grouped = normalize_and_group_anomalies(anomaly_list)
+        for group in grouped[:5]:
+            narrative_data = generate_causal_narrative(group, ctx.metrics_df, ctx.data_profile)
+            severity = group["severity"]
+            icon = {"critical": "🔴", "warning": "🟠", "info": "🔵"}.get(severity, "⚪")
+            metric_title = group["base_metric"].replace("_", " ").title()
+            report_lines.append(f"- {icon} **{metric_title}:** {narrative_data['narrative']}")
+            report_lines.append(f"  - _Next step:_ {narrative_data['next_action']}")
+    else:
+        report_lines.append("_No anomalies detected._")
+    
+    llm_interp = load_llm_interpretation(ctx.run_path)
+    if llm_interp and "summary" in llm_interp:
+        report_lines.append(f"")
+        report_lines.append(f"### AI-Enhanced Interpretation")
+        report_lines.append(f"")
+        report_lines.append(llm_interp["summary"])
+    
+    report_lines.append(f"")
+    report_lines.append(f"## Data Quality Highlights")
+    report_lines.append(f"")
+    
+    if ctx.data_profile:
+        summary = summarize_profile(ctx.data_profile)
+        if summary.has_data:
+            if summary.top_missing:
+                report_lines.append("**Most Missing Columns:**")
+                for col, pct in summary.top_missing[:3]:
+                    report_lines.append(f"- `{col}`: {pct:.2f}% missing")
+            if summary.top_skewed:
+                report_lines.append("**Most Skewed Columns:**")
+                for col, skew in summary.top_skewed[:3]:
+                    report_lines.append(f"- `{col}`: skew = {skew:.2f}")
+        else:
+            report_lines.append("_Profile highlights not available._")
+    else:
+        report_lines.append("_No data profile available._")
+    
+    llm_profile = load_profile_llm_summary(ctx.run_path)
+    if llm_profile and "summary" in llm_profile:
+        report_lines.append(f"")
+        report_lines.append(f"### AI Profile Summary")
+        report_lines.append(f"")
+        report_lines.append(llm_profile["summary"])
+    
+    report_lines.append(f"")
+    report_lines.append(f"## Recommended Next Steps")
+    report_lines.append(f"")
+    
+    if anomaly_list:
+        report_lines.append("1. Investigate critical anomalies flagged in Key Findings")
+        report_lines.append("2. Review data quality issues in the Profiling & EDA tab")
+        report_lines.append("3. Use Ask & Explore to query specific metrics or trends")
+    else:
+        report_lines.append("1. Explore metrics trends in the Metrics tab")
+        report_lines.append("2. Review data distributions in Profiling & EDA")
+        report_lines.append("3. Ask questions about your data in Ask & Explore")
+    
+    report_lines.append(f"")
+    report_lines.append(f"---")
+    report_lines.append(f"")
+    report_lines.append(f"_This report is based on a data snapshot and should be validated against source data._")
+    report_lines.append(f"_Generated by AI Analytics Assistant._")
+    
+    report_content = "\n".join(report_lines)
+    
+    st.subheader("Report Preview")
+    with st.expander("View Full Report", expanded=True):
+        st.markdown(report_content)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.download_button(
+            label="Download as Markdown",
+            data=report_content,
+            file_name=f"analytics_report_{run_id[:8]}.md",
+            mime="text/markdown",
+            key=f"download_md_{ctx.run_path.name}"
+        )
+    with col2:
+        st.info("PDF export coming soon")
+
+
 def main():
     st.title("📊 AI Analytics Assistant")
     st.caption("Artifact-driven analytics review for your data projects")
@@ -611,13 +770,18 @@ def main():
             st.sidebar.markdown(f"**Project:** `{selected_project[:12]}...`")
             st.sidebar.markdown(f"**Run:** `{selected_run[:12]}...`")
             
-            tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            tab0, tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+                "🏠 Home",
                 "Overview",
                 "Key Findings", 
                 "Metrics",
                 "Profiling & EDA",
-                "Ask & Explore"
+                "Ask & Explore",
+                "Summary Report"
             ])
+            
+            with tab0:
+                render_home(ctx)
             
             with tab1:
                 render_overview(ctx)
@@ -633,6 +797,9 @@ def main():
             
             with tab5:
                 render_ask_explore(ctx)
+            
+            with tab6:
+                render_summary_report(ctx)
 
 
 if __name__ == "__main__":

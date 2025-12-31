@@ -1,0 +1,114 @@
+Block 1: Create a Welcome/Home page and polish the UI
+
+NON‑NEGOTIABLE CONSTRAINTS (READ FIRST)
+DO NOT modify any code that produces artifacts, runs analyses, or writes files. This includes src/, projects/, tests/, tools/, and CLI logic.
+DO NOT change artifact schemas, filenames, or locations.
+DO NOT introduce new folders outside app/; new files must live only in app/.
+DO NOT duplicate logic across files—reuse helpers wherever possible.
+The engine is deterministic and locked. You are only improving presentation and UX.
+
+Welcome page & UI polish:
+
+Add a new tab called Home (positioned before Overview) in app/app.py.
+
+The Home page should contain a succinct description of the AI Analytics Assistant: purpose, what each tab does, and how to read the outputs.
+
+Include a “Get Started” section that prompts the user to select a project and run, with a link to the “Overview” tab.
+
+Keep this text in a new markdown file docs/HOME_CONTENT.md so it can be easily maintained.
+
+Update the app styling (titles, section headers, KPI numbers, badges) to use a consistent font size hierarchy and whitespace. Use Streamlit’s st.markdown with appropriate HTML/CSS if needed.
+
+Define a small set of color tokens (e.g. primary, secondary, critical, warning) in app/style_utils.py and apply them uniformly across badges, charts and callouts.
+
+Ensure all KPI and currency figures are formatted with thousands separators and dollar signs where appropriate (e.g. st.metric(label="Total Sales", value=f"${total_sales:,.0f}")).
+
+Add footnotes or tooltips for any domain‑specific metric names (e.g. units, sales, profit) so non‑technical users understand their meaning.
+
+📊 Block 2: Beef up the Metrics tab and enforce consistent formatting
+
+NON‑NEGOTIABLE CONSTRAINTS (READ FIRST)
+Same constraints as above.
+
+Metrics enhancements:
+
+In app/ui_components/metrics.py, create a function render_kpi_dashboard(metrics_df) that:
+
+Determines a few core KPIs (e.g. Total Sales, Total Units, Total Profit, Average Discount, Profit Margin).
+
+Uses st.columns or st.metric to display each KPI with consistent formatting (currency vs integer vs percentage).
+
+Adds a short description beneath each KPI explaining what it represents.
+
+Enhance the “Explore drivers” section by:
+
+Allowing users to choose a date granularity (year/month) if time fields exist.
+
+Displaying a trend line and a bar chart for the selected metric using consistent colors and axes labels.
+
+Label axes explicitly (e.g. “Units sold”, “Sum of Units per Category”) and add units to numbers.
+
+Add a “Metrics glossary” expander at the bottom of the tab that lists all metrics available in metrics.csv, along with definitions (pull definitions from analysis_plan.json if available).
+
+📑 Block 3: Improve the Profiling & EDA tab with deeper summaries
+
+NON‑NEGOTIABLE CONSTRAINTS (READ FIRST)
+Same constraints as above.
+
+EDA & profiling improvements:
+
+Extract top correlations and show them in the “EDA Highlights” section (e.g. top 3 pairs with correlation coefficient). Use the helper summarize_profile from the previous iteration.
+
+Summarise high‑cardinality categorical fields by listing the top 3 categories and their counts.
+
+Deduplicate overlapping stats (remove rows/columns/missing cells counts here since they are shown in the header).
+
+Format skew values consistently (e.g. two decimal places) and explain what skew means in a tooltip.
+
+Add a brief note at the top describing what a profiling report is and how to interpret it.
+
+🧠 Block 4: Integrate LLM‑powered synthesis and the CLI for Q&A
+
+NON‑NEGOTIABLE CONSTRAINTS (READ FIRST)
+Same constraints as above.
+
+LLM & Ask integration:
+
+Implement reading profile_llm_summary.json and llm_interpretation.json in their respective tabs. Use llm_utils.render_llm_profile and llm_utils.render_llm_interpretation to display evidence‑linked claims. If these files are absent, add a small callout explaining how to produce them (run analyst-agent run --llm).
+
+Enhance run_ask in app/ask_engine.py to support two modes:
+
+Deterministic Q&A: call analyst-agent ask as already planned and parse its JSON output.
+
+LLM Q&A: if the user ticks a checkbox “Use AI” and an API key is available, send the question and relevant artifact summaries to the LLM (wired via environment variables and openai package). Return the response in a structured format with references.
+
+Update the Ask tab UI:
+
+Add a checkbox “Use AI (LLM)” above the question input.
+
+Show different result components based on whether deterministic or AI mode was used.
+
+Provide an explanation of the difference between deterministic and AI answers.
+
+Ensure that AI mode gracefully falls back to deterministic if no API key is configured.
+
+📦 Block 5: Build a cover page / summary report generator
+
+NON‑NEGOTIABLE CONSTRAINTS (READ FIRST)
+Same constraints as above.
+
+Cover page & report generation:
+
+Add a “Summary Report” tab or button that compiles a one‑page narrative combining:
+
+Top KPIs from Metrics
+
+Key findings narrative (deterministic + LLM if available)
+
+EDA highlights and profile summary (deterministic + LLM if available)
+
+Recommended next analyses or business actions
+
+Use Streamlit’s st.download_button to allow users to download this report as a Markdown or PDF file. Use Python’s reportlab or pypandoc accordingly (the report can be deterministic; no engine changes needed).
+
+Ensure the report includes the date, project/run identifiers, and a disclaimer that it is based on the current data snapshot.
