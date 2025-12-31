@@ -3,11 +3,44 @@
 This module provides placeholder functions for LLM-powered features.
 Currently, these are stubs that will be activated when llm_interpretation.json
 artifacts are produced by the analytics engine.
+
+API Key Priority:
+1. User-provided OPENAI_API_KEY from st.secrets or os.environ (gives you control over costs)
+2. Replit's AI_INTEGRATIONS_OPENAI_API_KEY (fallback)
 """
 import streamlit as st
 from pathlib import Path
 import json
+import os
 from typing import Optional, Dict, Any
+
+
+def get_openai_api_key() -> Optional[str]:
+    """
+    Get OpenAI API key with user-provided key taking priority.
+    
+    Priority order:
+    1. st.secrets["OPENAI_API_KEY"] - user-configured secret
+    2. os.environ["OPENAI_API_KEY"] - environment variable
+    3. os.environ["AI_INTEGRATIONS_OPENAI_API_KEY"] - Replit integration (fallback)
+    
+    Returns:
+        API key string or None if not configured.
+    """
+    if hasattr(st, 'secrets') and "OPENAI_API_KEY" in st.secrets:
+        return st.secrets["OPENAI_API_KEY"]
+    if os.environ.get("OPENAI_API_KEY"):
+        return os.environ.get("OPENAI_API_KEY")
+    return os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY")
+
+
+def get_openai_base_url() -> Optional[str]:
+    """Get OpenAI base URL if configured."""
+    if hasattr(st, 'secrets') and "OPENAI_BASE_URL" in st.secrets:
+        return st.secrets["OPENAI_BASE_URL"]
+    if os.environ.get("OPENAI_BASE_URL"):
+        return os.environ.get("OPENAI_BASE_URL")
+    return os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL")
 
 
 def load_llm_interpretation(run_path: Path) -> Optional[Dict[str, Any]]:
@@ -224,6 +257,7 @@ def render_llm_profile(run_path: Path) -> bool:
     if profile_summary is None:
         return False
     
+    st.info("**AI-generated profile summary** — The insights below were synthesized by a language model based on the data profile.")
     st.subheader("AI-Generated Data Profile Summary")
     
     if "summary" in profile_summary:

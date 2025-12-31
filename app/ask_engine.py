@@ -291,9 +291,14 @@ def run_ask_query(project_id: str, question: str, use_llm: bool = False, timeout
 
 
 def is_llm_available() -> bool:
-    """Check if LLM API is available via environment variables."""
-    api_key = os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
-    return bool(api_key)
+    """Check if LLM API is available via environment variables or secrets."""
+    import sys
+    from pathlib import Path
+    app_dir = Path(__file__).parent
+    if str(app_dir) not in sys.path:
+        sys.path.insert(0, str(app_dir))
+    from llm_utils import get_openai_api_key
+    return bool(get_openai_api_key())
 
 
 def run_llm_ask(question: str, context: Dict[str, Any]) -> Tuple[Optional[str], Optional[list]]:
@@ -307,8 +312,14 @@ def run_llm_ask(question: str, context: Dict[str, Any]) -> Tuple[Optional[str], 
     Returns:
         Tuple of (answer, references) where references are artifact keys used
     """
-    api_key = os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
-    base_url = os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL")
+    import sys
+    app_dir = Path(__file__).parent
+    if str(app_dir) not in sys.path:
+        sys.path.insert(0, str(app_dir))
+    from llm_utils import get_openai_api_key, get_openai_base_url
+    
+    api_key = get_openai_api_key()
+    base_url = get_openai_base_url()
     
     if not api_key:
         return None, None

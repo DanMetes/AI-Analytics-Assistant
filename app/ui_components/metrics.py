@@ -1,7 +1,7 @@
 """Metrics UI components."""
 import streamlit as st
 import pandas as pd
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 KPI_DEFINITIONS = {
     "Total Sales": "Total revenue generated from all transactions in dollars",
@@ -14,13 +14,115 @@ KPI_DEFINITIONS = {
 }
 
 
-def render_kpi_dashboard(metrics_df: pd.DataFrame, run_id: str = ""):
+def format_kpi_value(value: float, format_type: str) -> str:
+    """Format KPI values consistently with proper separators and symbols."""
+    if format_type == "currency":
+        if abs(value) >= 1_000_000:
+            return f"${value / 1_000_000:,.2f}M"
+        else:
+            return f"${value:,.2f}"
+    elif format_type == "percent":
+        return f"{value:.2%}"
+    else:
+        return f"{value:,.0f}"
+
+
+def detect_time_column(df: pd.DataFrame) -> Optional[str]:
+    """Detect time column in the metrics dataframe for trend charts."""
+    time_candidates = ["year", "month", "quarter", "date", "period", "time"]
+    keys = df["key"].unique() if "key" in df.columns else []
+    
+    for key in keys:
+        key_lower = key.lower()
+        for candidate in time_candidates:
+            if candidate in key_lower and ":" in key:
+                parts = key.split(":")
+                if len(parts) >= 1:
+                    return parts[0]
+    return None
+
+
+def extract_trend_data(df: pd.DataFrame, metric_key: str) -> Optional[pd.DataFrame]:
+    """Extract time-series data for trend charts.
+    
+    Supports key formats:
+    - "<period>:<metric_name>" e.g., "2019:sum_sales"
+    - "<field>:<period>:<metric_name>" e.g., "order_date:2019:sum_sales"
+    
+    The period is identified as the penultimate segment when 3+ parts exist,
+    or the first segment for 2-part keys.
     """
-    Render a KPI dashboard with core metrics and descriptions.
+    if df is None or df.empty:
+        return None
+    
+    time_summary = df[df["section"] == "time_summary"].copy()
+    if time_summary.empty:
+        return None
+    
+    metric_rows = time_summary[time_summary["key"].str.endswith(f":{metric_key}", na=False)]
+    if metric_rows.empty:
+        metric_rows = time_summary[time_summary["key"].str.contains(metric_key, case=False, na=False)]
+    
+    if metric_rows.empty:
+        return None
+    
+    trend_data = []
+    seen_periods = set()
+    
+    for _, row in metric_rows.iterrows():
+        key_parts = row["key"].split(":")
+        
+        if len(key_parts) >= 3:
+            period = key_parts[-2].strip()
+        elif len(key_parts) == 2:
+            period = key_parts[0].strip()
+        else:
+            continue
+        
+        if period in seen_periods:
+            continue
+        
+        try:
+            value = float(row["value"])
+            trend_data.append({"period": period, "value": value})
+            seen_periods.add(period)
+        except (ValueError, TypeError):
+            continue
+    
+    if len(trend_data) < 2:
+        return None
+    
+    result = pd.DataFrame(trend_data)
+    
+    try:
+        result["sort_key"] = pd.to_numeric(result["period"], errors="coerce")
+        if result["sort_key"].isna().all():
+            result = result.sort_values("period")
+        else:
+            result = result.sort_values("sort_key")
+        result = result.drop(columns=["sort_key"])
+    except Exception:
+        result = result.sort_values("period")
+    
+    return result
+
+
+def render_trend_chart(df: pd.DataFrame, metric_key: str, metric_label: str):
+    """Render a small trend chart for a KPI metric."""
+    trend_data = extract_trend_data(df, metric_key)
+    if trend_data is not None and len(trend_data) > 1:
+        trend_data = trend_data.set_index("period")
+        st.line_chart(trend_data, height=100)
+
+
+def render_kpi_dashboard(metrics_df: pd.DataFrame, run_id: str = "", show_trends: bool = True):
+    """
+    Render a KPI dashboard with core metrics, descriptions, and trend charts.
     
     Args:
         metrics_df: DataFrame containing metrics.csv data
         run_id: Run ID for unique widget keys
+        show_trends: Whether to show trend charts for each KPI
     """
     if metrics_df is None or metrics_df.empty:
         st.info("No metrics data available.")
@@ -36,18 +138,19 @@ def render_kpi_dashboard(metrics_df: pd.DataFrame, run_id: str = ""):
         row_count_row = overall[overall["key"] == "row_count"]
         if not row_count_row.empty:
             kpis.append({
-                "label": "Total Rows",
+                "label": "Total Rows (count)",
                 "value": int(float(row_count_row["value"].iloc[0])),
                 "format": "count",
+                "metric_key": None,
                 "description": KPI_DEFINITIONS.get("Total Rows", "")
             })
     
     if not time_summary.empty:
         metric_mappings = [
-            ("sum_sales", "Total Sales", "currency"),
-            ("sum_profit", "Total Profit", "currency"),
-            ("sum_units", "Total Units", "count"),
-            ("sum_discount", "Total Discount", "currency"),
+            ("sum_sales", "Total Sales ($)", "currency"),
+            ("sum_profit", "Total Profit ($)", "currency"),
+            ("sum_units", "Total Units (count)", "count"),
+            ("sum_discount", "Total Discount ($)", "currency"),
         ]
         
         for metric_key, label, fmt in metric_mappings:
@@ -58,16 +161,18 @@ def render_kpi_dashboard(metrics_df: pd.DataFrame, run_id: str = ""):
                     "label": label,
                     "value": total,
                     "format": fmt,
-                    "description": KPI_DEFINITIONS.get(label, "")
+                    "metric_key": metric_key,
+                    "description": KPI_DEFINITIONS.get(label.split(" (")[0], "")
                 })
         
         margin_rows = time_summary[time_summary["key"].str.contains("profit_margin")]
         if not margin_rows.empty:
             avg_margin = margin_rows["value"].astype(float).mean()
             kpis.append({
-                "label": "Avg Profit Margin",
+                "label": "Avg Profit Margin (%)",
                 "value": avg_margin,
                 "format": "percent",
+                "metric_key": "profit_margin",
                 "description": KPI_DEFINITIONS.get("Avg Profit Margin", "")
             })
         
@@ -75,9 +180,10 @@ def render_kpi_dashboard(metrics_df: pd.DataFrame, run_id: str = ""):
         if not discount_rows.empty:
             avg_discount = discount_rows["value"].astype(float).mean()
             kpis.append({
-                "label": "Average Discount",
+                "label": "Average Discount (%)",
                 "value": avg_discount,
                 "format": "percent",
+                "metric_key": "discount",
                 "description": KPI_DEFINITIONS.get("Average Discount", "")
             })
     
@@ -90,15 +196,14 @@ def render_kpi_dashboard(metrics_df: pd.DataFrame, run_id: str = ""):
     
     for i, kpi in enumerate(kpis[:num_kpis]):
         with cols[i]:
-            if kpi["format"] == "currency":
-                value_str = f"${kpi['value']:,.0f}"
-            elif kpi["format"] == "percent":
-                value_str = f"{kpi['value']:.1%}"
-            else:
-                value_str = f"{kpi['value']:,.0f}"
-            
+            value_str = format_kpi_value(kpi["value"], kpi["format"])
             st.metric(kpi["label"], value_str, help=kpi["description"])
-            st.caption(kpi["description"][:50] + "..." if len(kpi["description"]) > 50 else kpi["description"])
+            
+            if show_trends and kpi.get("metric_key"):
+                render_trend_chart(df, kpi["metric_key"], kpi["label"])
+            
+            if kpi["description"]:
+                st.caption(kpi["description"][:60] + "..." if len(kpi["description"]) > 60 else kpi["description"])
 
 
 def render_metrics_glossary(metrics_df: pd.DataFrame, analysis_plan: Optional[Dict] = None):

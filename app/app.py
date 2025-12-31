@@ -14,6 +14,29 @@ st.set_page_config(
     layout="wide"
 )
 
+APP_USER = st.secrets.get("app_user", "admin")
+APP_PASS = st.secrets.get("app_pass", "password")
+
+def check_login():
+    """Simple username/password authentication."""
+    if "authenticated" not in st.session_state or not st.session_state["authenticated"]:
+        st.title("AI Analytics Assistant")
+        st.markdown("Please log in to continue.")
+        
+        username = st.text_input("Username", "", key="login_username")
+        password = st.text_input("Password", "", type="password", key="login_password")
+        
+        if st.button("Login", type="primary"):
+            if username == APP_USER and password == APP_PASS:
+                st.session_state["authenticated"] = True
+                st.success("Logged in!")
+                st.rerun()
+            else:
+                st.error("Invalid credentials")
+        st.stop()
+
+check_login()
+
 PROJECTS_DIR = Path("projects")
 
 
@@ -402,11 +425,15 @@ Use these insights to understand your data before analysis and identify potentia
     st.subheader("EDA Highlights")
     st.caption("Key data quality insights. Row/column counts shown in the header above.")
     
+    from ui_components.profile_utils import STAT_TOOLTIPS
+    
     if ctx.data_profile:
         summary = summarize_profile(ctx.data_profile)
         
         if summary.has_data:
-            has_highlights = summary.top_missing or summary.top_skewed or summary.top_correlations or summary.high_cardinality
+            has_highlights = (summary.top_missing or summary.top_skewed or 
+                            summary.top_positive_correlations or summary.top_negative_correlations or 
+                            summary.top_unique_counts)
             
             if has_highlights:
                 left_col, right_col = st.columns(2)
@@ -419,17 +446,28 @@ Use these insights to understand your data before analysis and identify potentia
                             st.markdown(f"<span style='color:{severity_color}'>●</span> `{col}`: {pct:.1f}% missing", unsafe_allow_html=True)
                     
                     if summary.top_skewed:
-                        st.markdown("**Skewed Distributions**")
+                        st.markdown("**Skewed Distributions** ℹ️", help=STAT_TOOLTIPS["skew"])
                         st.caption("_Skew > 1 or < -1 indicates significant asymmetry_")
                         for col, skew in summary.top_skewed:
                             direction = "→" if skew > 0 else "←"
                             st.markdown(f"- `{col}`: {direction} skew = {skew:.2f}")
+                    
+                    if summary.top_unique_counts:
+                        st.markdown("**Unique Value Counts** ℹ️", help=STAT_TOOLTIPS["unique_values"])
+                        for col, count in summary.top_unique_counts:
+                            st.markdown(f"- `{col}`: {count:,} unique values")
                 
                 with right_col:
-                    if summary.top_correlations:
-                        st.markdown("**Strong Correlations**")
-                        for col_a, col_b, r in summary.top_correlations:
-                            strength = "strong" if abs(r) > 0.7 else "moderate"
+                    if summary.top_positive_correlations:
+                        st.markdown("**Positive Correlations** ℹ️", help=STAT_TOOLTIPS["correlation"])
+                        for col_a, col_b, r in summary.top_positive_correlations:
+                            strength = "strong" if r > 0.7 else "moderate" if r > 0.4 else "weak"
+                            st.markdown(f"- `{col_a}` ↔ `{col_b}`: r = +{r:.3f} ({strength})")
+                    
+                    if summary.top_negative_correlations:
+                        st.markdown("**Negative Correlations** ℹ️", help=STAT_TOOLTIPS["correlation"])
+                        for col_a, col_b, r in summary.top_negative_correlations:
+                            strength = "strong" if abs(r) > 0.7 else "moderate" if abs(r) > 0.4 else "weak"
                             st.markdown(f"- `{col_a}` ↔ `{col_b}`: r = {r:.3f} ({strength})")
                     
                     if summary.high_cardinality:
@@ -495,17 +533,31 @@ def render_ask_explore(ctx: RunContext):
     st.header("Ask & Explore")
     render_run_header(ctx)
     
-    st.subheader("Ask a Question")
-    st.markdown("Query the analysis artifacts using natural language.")
+    st.markdown("""
+**Ask questions about your data** and get answers from computed metrics and analysis artifacts.
+Choose between deterministic answers (fully reproducible) or AI-powered explanations (natural language).
+    """)
     
-    with st.expander("Understanding Q&A Modes", expanded=False):
-        st.markdown("""
-**Deterministic Q&A** uses the analyst-agent CLI to query existing artifacts. 
-Answers are based solely on computed metrics and detected anomalies — fully reproducible.
-
-**AI-Powered Q&A** uses a language model to interpret your artifacts and provide 
-natural language explanations. Results may vary slightly between queries.
-        """)
+    st.subheader("Ask a Question")
+    
+    with st.expander("Understanding Q&A Modes", expanded=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("""
+**Deterministic Q&A**
+- Uses the analyst-agent CLI to query existing artifacts
+- Answers based on computed metrics and detected anomalies
+- Fully reproducible — same question always gives same answer
+- May generate code scaffolds for complex questions
+            """)
+        with col2:
+            st.markdown("""
+**AI-Powered Q&A**
+- Uses a language model to interpret your artifacts
+- Provides natural language explanations and insights
+- Results may vary slightly between queries
+- Requires an OpenAI API key (see Settings)
+            """)
     
     llm_available = is_llm_available()
     
@@ -647,11 +699,14 @@ def render_home(ctx: RunContext):
     app_dir = Path(__file__).parent
     if str(app_dir) not in sys.path:
         sys.path.insert(0, str(app_dir))
-    from home_content import WELCOME_TITLE, WELCOME_INTRO, TAB_DESCRIPTIONS, HOW_TO_READ, GET_STARTED, ABOUT_ENGINE
+    from home_content import (WELCOME_TITLE, MISSION_STATEMENT, WELCOME_INTRO, 
+                              TAB_DESCRIPTIONS, HOW_TO_READ, ENABLE_AI_HELP, 
+                              GET_STARTED, ABOUT_ENGINE)
     from style_utils import COLORS
     
     st.header(f"Welcome to {WELCOME_TITLE}")
     
+    st.markdown(MISSION_STATEMENT)
     st.markdown(WELCOME_INTRO)
     
     project_id = ctx.run_path.parent.parent.name
@@ -661,6 +716,10 @@ def render_home(ctx: RunContext):
     
     st.markdown(TAB_DESCRIPTIONS)
     st.markdown(HOW_TO_READ)
+    
+    with st.expander("How to Enable AI & Profiling", expanded=False):
+        st.markdown(ENABLE_AI_HELP)
+    
     st.markdown(GET_STARTED)
     st.markdown(ABOUT_ENGINE)
 

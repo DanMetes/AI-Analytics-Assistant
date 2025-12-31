@@ -1,0 +1,132 @@
+Block 1: Add basic authentication and switch to your own OpenAI key
+
+NON‑NEGOTIABLE CONSTRAINTS (READ FIRST)
+DO NOT modify code under src/, projects/, tests/, tools/, or the CLI.
+DO NOT change artifact schemas, filenames, or locations.
+DO NOT create new folders outside app/. Reuse helpers.
+The analytics engine is deterministic and locked; only UI/presentation code may be changed.
+
+Security and API key changes:
+
+Add a simple username/password prompt at the start of the Streamlit app. In app/app.py, before rendering any tabs, insert:
+
+import streamlit as st
+USER = st.secrets.get("app_user", "admin")
+PASS = st.secrets.get("app_pass", "password")
+def check_login():
+    if "authenticated" not in st.session_state or not st.session_state["authenticated"]:
+        username = st.text_input("Username", "")
+        password = st.text_input("Password", "", type="password")
+        if st.button("Login"):
+            if username == USER and password == PASS:
+                st.session_state["authenticated"] = True
+                st.success("Logged in!")
+            else:
+                st.error("Invalid credentials")
+        st.stop()
+check_login()
+
+
+Then add the app_user and app_pass entries to your Replit secrets (Settings → Secrets).
+
+Modify llm_utils.py to read OPENAI_API_KEY from st.secrets or os.environ and pass it directly to OpenAI, bypassing Replit’s built‑in integration. Provide a note in the README explaining that using your own API key controls costs.
+
+Remove or disable Replit’s auto‑configured OpenAI integration (e.g., unset REPLIT_OPENAI_ENV if needed). If both keys exist, prefer the user‑provided one.
+
+📊 Block 2: Beef up the Metrics tab across datasets
+
+NON‑NEGOTIABLE CONSTRAINTS (READ FIRST)
+Same constraints as above.
+
+Metrics upgrades:
+
+Ensure all KPI numbers are formatted consistently: use thousands separators ({value:,.0f}) for counts, dollar signs for currency (f"${value:,.2f}"), and percentage signs for percentages (f"{value:.2%}").
+
+Provide a glossary of all metrics in metrics.csv by reading metric definitions from analysis_plan.json (if available). Add an expandable “Metrics glossary” section under the KPI dashboard.
+
+Add a small trend chart for each headline KPI over time (if a year or month field exists). Use st.line_chart() with a consistent color scheme.
+
+Make sure the “Trends & Drivers” controls dynamically pick up categorical and numeric fields based on the uploaded dataset, so any dataset can be analyzed without hard‑coded column names. If no time field exists, hide the date selector.
+
+🧠 Block 3: Summarise correlations and skew in the EDA tab
+
+NON‑NEGOTIABLE CONSTRAINTS (READ FIRST)
+Same constraints as above.
+
+Profiling & EDA enhancements:
+
+Extend profile_utils.summarize_profile to extract and display:
+
+Top three strongest positive correlations (variable pairs with correlation coefficient).
+
+Top three strongest negative correlations (absolute value of coefficient).
+
+Top three unique‐value counts for categorical columns (field name and number of unique values).
+
+Show these new summaries in the EDA Highlights section, and remove repeated statistics already displayed in the header (rows, columns, missing cells).
+
+Add tooltips or footnotes explaining what “skew”, “correlation” and “unique values” mean.
+
+If LLM profiling summaries exist (profile_llm_summary.json), display them after the highlights with a callout “AI‑generated profile summary”.
+
+🤖 Block 4: Wire up the Ask & Explore tab and optional LLM Q&A
+
+NON‑NEGOTIABLE CONSTRAINTS (READ FIRST)
+Same constraints as above.
+
+Ask & Explore operationalization:
+
+In app/ask_engine.py, complete run_ask so it uses subprocess.run to call analyst-agent ask --project <id> --question "<question>" and returns structured JSON output (answer vs plan/code). Use environment variables to set timeouts.
+
+Update the Ask tab UI to:
+
+Provide a “Use AI (LLM)” checkbox.
+
+On submit, call run_ask if deterministic mode is selected; otherwise call openai.ChatCompletion.create() with the artifacts loaded into context (if OPENAI_API_KEY is configured). For AI mode, summarise the output and include evidence references.
+
+When the deterministic mode yields a plan and code, show the methodology bullet list and a “Download code” button that writes the code to /tmp and lets users download it.
+
+Handle exceptions with friendly error messages.
+
+Clearly explain the differences between deterministic answers and AI answers in a short paragraph at the top of the Ask tab.
+
+🖼️ Block 5: Polish the Home page and apply professional styling
+
+NON‑NEGOTIABLE CONSTRAINTS (READ FIRST)
+Same constraints as above.
+
+Front page & styling:
+
+Enhance the Home page in docs/HOME_CONTENT.md to include:
+
+A concise mission statement (e.g. “AI Analytics Assistant turns raw tables into actionable insights”).
+
+A table describing each tab and what the user should expect from it (Overview, Key Findings, Metrics, Profiling & EDA, Ask & Explore, Summary Report).
+
+A note on how to interpret the severity badges (Critical, Warning, Info) and color coding used throughout the UI.
+
+A link to a “How to enable AI & profiling” help section (point to docs or environment variables).
+
+Apply consistent padding, border radius, and color scheme across all tabs using values defined in style_utils.py. Use muted backgrounds for cards and callouts.
+
+Use a consistent font size hierarchy (e.g. Title: st.title / st.markdown("##"); Subheadings: st.subheader; Body text: st.markdown).
+
+Ensure all units and metrics are labeled clearly; for example, write “Total Units (count)” rather than just “Units”.
+
+✅ Final note
+
+These changes will:
+
+Protect your work‑in‑progress app behind a simple login.
+
+Give you full control over LLM usage and billing via your own API key.
+
+Transform the Metrics tab into a professional dashboard with dynamic capabilities.
+
+Extract richer insights from profiling, including correlations and unique values, rather than repeating counts.
+
+Make Ask & Explore truly operational: deterministic Q&A with follow‑up plans and code, plus optional AI Q&A.
+
+Deliver a polished front page that onboards users and clarifies severity badges and color coding.
+
+Apply these blocks sequentially, re‑publish and push to GitHub, and then let me know so I can validate the updated UI and help with further refinements.

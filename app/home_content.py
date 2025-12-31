@@ -2,6 +2,13 @@
 
 WELCOME_TITLE = "AI Analytics Assistant"
 
+MISSION_STATEMENT = """
+**AI Analytics Assistant turns raw tables into actionable insights.**
+
+Upload your data, and our intelligent engine will automatically detect anomalies, 
+calculate key metrics, and generate explanations — all without writing a single line of code.
+"""
+
 WELCOME_INTRO = """
 Welcome to the **AI Analytics Assistant**, your intelligent companion for exploring and understanding your data analysis results.
 
@@ -12,33 +19,60 @@ All analyses are **deterministic and reproducible** — the same data always pro
 TAB_DESCRIPTIONS = """
 ### What Each Tab Does
 
-| Tab | Purpose |
-|-----|---------|
-| **Overview** | High-level summary of your analysis run, including key KPIs, data quality highlights, and recommended next steps |
-| **Key Findings** | Anomalies and issues detected in your data, grouped by type with explanations and suggested actions |
-| **Metrics** | Detailed metrics dashboard with trends, drivers, and the ability to explore your data by different dimensions |
-| **Profiling & EDA** | Exploratory data analysis including distributions, correlations, and data quality statistics |
-| **Ask & Explore** | Query your data using natural language questions — get answers from artifacts or AI-powered insights |
-| **Summary Report** | Generate a downloadable summary combining key insights from all tabs |
+| Tab | What You'll See |
+|-----|-----------------|
+| **Overview** | High-level summary with key KPIs, data quality highlights, anomaly counts, and recommended next steps |
+| **Key Findings** | Detected anomalies grouped by type with severity indicators, causal explanations, and suggested actions |
+| **Metrics** | Professional dashboard with headline KPIs, trend charts over time, and interactive data exploration |
+| **Profiling & EDA** | Data profiling including distributions, correlations (positive and negative), unique value counts, and skewness |
+| **Ask & Explore** | Natural language Q&A — ask questions about your data and get answers from computed artifacts or AI |
+| **Summary Report** | Generate and download a comprehensive report combining insights from all tabs |
 """
 
 HOW_TO_READ = """
 ### How to Read the Outputs
 
-**Severity Indicators:**
-- 🔴 **Critical** — Requires immediate attention; significant deviation from expected values
-- 🟠 **Warning** — Notable issue that should be reviewed
-- 🔵 **Info** — Informational finding for awareness
+**Severity Badges — What They Mean:**
 
-**Key Metrics:**
-- **Units** — Quantity of items sold or processed
-- **Sales** — Revenue generated (in dollars)
-- **Profit** — Net earnings after costs
-- **Profit Margin** — Ratio of profit to sales (percentage)
+| Badge | Meaning | Action Required |
+|-------|---------|-----------------|
+| 🔴 **Critical** | Significant deviation from expected values or data quality issue | Investigate immediately — may impact business decisions |
+| 🟠 **Warning** | Notable pattern or issue worth reviewing | Review when possible — could indicate emerging trends |
+| 🔵 **Info** | Informational finding for awareness | No immediate action — useful context for analysis |
 
-**Data Quality:**
+**Color Coding:**
+- Red backgrounds/borders indicate critical issues requiring attention
+- Orange/yellow highlights suggest warnings to review
+- Blue/green elements represent informational or positive findings
+
+**Key Metrics Explained:**
+- **Units (count)** — Quantity of items sold or processed
+- **Sales ($)** — Revenue generated in dollars
+- **Profit ($)** — Net earnings after costs are subtracted
+- **Profit Margin (%)** — Ratio of profit to sales, expressed as percentage
+- **Discount (%)** — Price reduction applied to items
+
+**Data Quality Indicators:**
 - Missing values, skewed distributions, and high-cardinality fields are flagged for review
-- Correlations help identify relationships between variables
+- Correlations show relationships between numeric variables (positive or negative)
+"""
+
+ENABLE_AI_HELP = """
+### How to Enable AI & Profiling
+
+**AI-Powered Features:**
+To enable AI-powered Q&A and interpretations:
+1. Add your `OPENAI_API_KEY` to Replit Secrets (Settings → Secrets)
+2. The AI checkbox in the Ask & Explore tab will become active
+3. Using your own API key gives you control over costs and usage
+
+**Profiling Reports:**
+To generate detailed profiling reports:
+1. Ensure Python 3.11 or 3.12 is installed (required by ydata-profiling)
+2. Install profiling dependencies: `pip install -e '.[profiling]'`
+3. Re-run your analysis to generate the profiling artifacts
+
+Note: Profiling is optional but provides rich statistical summaries and visualizations.
 """
 
 GET_STARTED = """
@@ -48,7 +82,7 @@ GET_STARTED = """
 2. **Select a Run** to view a specific analysis snapshot
 3. **Navigate the tabs** to explore different aspects of your data
 
-👉 **Ready?** Click on the **Overview** tab to see a summary of your selected analysis run.
+**Ready?** Click on the **Overview** tab to see a summary of your selected analysis run.
 """
 
 ABOUT_ENGINE = """

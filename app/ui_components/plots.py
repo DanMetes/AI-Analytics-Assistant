@@ -91,7 +91,7 @@ def render_plots(run_path: Path) -> bool:
             st.image(
                 str(plot_path), 
                 caption=selected_plot.replace("_", " ").replace(".png", "").title(),
-                use_container_width=True
+                width="stretch"
             )
     
     else:
@@ -106,7 +106,7 @@ def render_plots(run_path: Path) -> bool:
                     st.image(
                         str(plot_path),
                         caption=filename.replace("_", " ").replace(".png", "").title(),
-                        use_container_width=True
+                        width="stretch"
                     )
     
     return True
