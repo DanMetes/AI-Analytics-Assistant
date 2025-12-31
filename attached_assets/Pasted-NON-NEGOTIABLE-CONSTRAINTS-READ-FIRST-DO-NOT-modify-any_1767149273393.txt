@@ -1,0 +1,169 @@
+NON-NEGOTIABLE CONSTRAINTS (READ FIRST)
+
+DO NOT modify any code that produces artifacts, runs analyses, or writes files.
+This includes everything under:
+src/, projects/, tests/, tools/, and any CLI or engine logic.
+
+DO NOT change artifact schemas, filenames, or locations.
+
+DO NOT introduce new folders arbitrarily.
+New files are allowed only inside the existing app/ folder, and only when strictly necessary.
+
+DO NOT duplicate logic across files. Reuse existing helpers where possible.
+
+The analytics engine is deterministic and locked. You are only improving presentation and UX.
+
+Goal
+
+Make Overview / Key Findings / Metrics / Profiling product-grade and user-friendly.
+
+Work in this repo without changing the deterministic analytics engine.
+Only improve the Streamlit UI and minimal documentation if needed.
+
+1) Shared “Run Summary Header” component
+
+Create one new file only:
+app/ui_components/header.py
+
+Implement render_run_header(run_ctx) that displays:
+
+Project ID, Run ID, run timestamp (from analysis_log.json)
+
+Rows, columns, missing cells (from data_profile.json if present; otherwise show “N/A”)
+
+Count of anomalies (from anomalies_normalized.json)
+
+Profiling availability: whether eda_report.html exists
+
+This header must be reused across tabs.
+Do not copy/paste header logic into multiple files.
+
+2) Overview tab rewrite (no raw JSON by default)
+
+Replace raw JSON rendering with a curated layout:
+
+Dataset & Run
+
+bullets only (no tables, no JSON)
+
+Data Quality
+
+missingness summary
+
+high-cardinality flags if available
+
+skew flags if available
+
+What to review next
+
+buttons/links that navigate to Key Findings / Metrics / Profiling
+
+Add one expander at the bottom:
+
+“Advanced: raw artifacts”
+
+raw st.json() outputs live only here
+
+3) Key Findings tab: cards + drill-downs
+
+Render anomalies as cards, sorted by severity:
+
+Severity badge (Critical / Warning / Info)
+
+One-line summary
+
+Evidence (small table excerpt or key values)
+
+Recommended next step (one sentence)
+
+Interpretation must be shown as a separate section below anomalies, as concise bullets.
+
+Do not repeat run metadata or dataset info here.
+
+Raw JSON goes only inside a single expander at the bottom.
+
+4) Metrics tab: headline KPIs + explorer
+
+Add a Headline KPIs section:
+
+Up to 4 metrics derived from metrics.csv
+
+Add an Explore Drivers section:
+
+dropdown: group-by (categorical columns only)
+
+dropdown: metric (numeric columns only)
+
+render top 15 groups as:
+
+table
+
+bar chart
+
+Include a CSV download button.
+
+Keep the full raw metrics table inside an expander.
+
+5) Profiling tab: highlights first, report second
+
+If data_profile.json exists:
+
+show highlights (rows, columns, missing cells)
+
+list most-missing columns
+
+list most-skewed columns
+
+If eda_report.html exists:
+
+embed it under “Full profiling report”
+
+If profiling artifacts are missing:
+
+show a clear callout explaining:
+
+what is missing
+
+why (Python version / dependency)
+
+how to enable (Python 3.12 + ydata-profiling)
+
+6) Navigation and labeling
+
+App title: AI Analytics Assistant
+
+One-line subtitle explaining value (artifact-driven analytics review)
+
+Tab names must be exactly:
+
+Overview
+
+Key Findings
+
+Metrics
+
+Profiling & EDA
+
+Ask & Explore
+
+7) Artifact contract (hard requirement)
+
+UI must continue to discover runs under:
+projects/<project_id>/runs/<run_id>/
+
+No path changes, no renaming, no normalization.
+
+8) After implementation
+
+Run the app
+
+Verify no exceptions
+
+Commit and push to GitHub main
+
+Do not add demo data or sample runs unless explicitly instructed later
+
+Reminder
+
+This task is presentation-only.
+Any modification to engine logic or artifact generation is a failure.
