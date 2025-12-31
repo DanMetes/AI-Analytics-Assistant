@@ -6,8 +6,10 @@ A product-grade Streamlit-based artifact viewer for the AI Analytics platform. T
 ## Project Structure
 - `app/` - Streamlit UI application
   - `app.py` - Main application entry point
+  - `llm_utils.py` - LLM integration utilities (placeholder for future LLM features)
   - `ui_components/` - Reusable UI components
     - `header.py` - Shared run summary header
+    - `summary.py` - Run summary helper with top KPIs and next steps
 - `src/analyst_agent/` - Core analyst agent library (DO NOT MODIFY)
 - `projects/` - Project artifacts storage (`projects/<project_id>/runs/<run_id>/`)
 - `tests/` - Test suite
@@ -17,11 +19,11 @@ A product-grade Streamlit-based artifact viewer for the AI Analytics platform. T
 
 ## Key Features
 - **Run Summary Header**: Displays project ID, run ID, timestamp, row/column counts, missing cells, anomaly count, and profiling availability
-- **Overview Tab**: Curated dataset info, data quality summary (missingness, high-cardinality, skew flags), navigation hints
-- **Key Findings Tab**: Severity-sorted anomaly cards (Critical/Warning/Info), interpretation bullets, drill-down details
-- **Metrics Tab**: Headline KPIs, Explore Drivers section with group-by/metric dropdowns, top 15 groups table + bar chart, CSV download
-- **Profiling & EDA Tab**: Data highlights first, embedded ydata-profiling HTML report, generated plots
-- **Ask & Explore Tab**: Stub for future LLM-backed Q&A
+- **Overview Tab**: Curated run summary with top KPIs, Data Quality Highlights (missingness, high-cardinality, skew flags), recommended next steps
+- **Key Findings Tab**: Anomalies grouped by mechanism (units, sales, profit), severity-sorted cards (Critical/Warning/Info), unified interpretation summary
+- **Metrics Tab**: Headline KPIs, Trends and Drivers panel with matplotlib bar charts, group-by/metric dropdowns, CSV download
+- **Profiling & EDA Tab**: EDA Highlights section, embedded ydata-profiling HTML report, generated plots, clear callout for missing reports
+- **Ask & Explore Tab**: CLI subprocess integration for artifact queries, LLM placeholder for future Q&A features
 
 ## Running the App
 ```bash
@@ -41,6 +43,7 @@ projects/
         eda_report.html
         ingest_meta.json
         interpretation.json
+        llm_interpretation.json (optional - for LLM features)
         metrics.csv
         report.md
         reproduce.sql
@@ -48,9 +51,15 @@ projects/
           *.png
 ```
 
+## UI Components
+- `ui_components/summary.py`: Provides `render_run_summary(run_path)` for generating high-level run summaries including top KPIs and recommended next steps
+- `ui_components/header.py`: Provides `render_run_header()` for consistent run metrics display across tabs
+- `llm_utils.py`: Provides `load_llm_interpretation()` and `render_llm_summary()` for future LLM integration
+
 ## Dependencies
 See `pyproject.toml` for full dependency list. Key dependencies:
 - streamlit
 - pandas
+- matplotlib
 - ydata-profiling (optional, for EDA reports)
-- typer, pydantic, matplotlib
+- typer, pydantic
