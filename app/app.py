@@ -14,8 +14,12 @@ st.set_page_config(
     layout="wide"
 )
 
-APP_USER = st.secrets.get("app_user", "admin")
-APP_PASS = st.secrets.get("app_pass", "password")
+try:
+    APP_USER = st.secrets.get("app_user", "admin")
+    APP_PASS = st.secrets.get("app_pass", "password")
+except Exception:
+    APP_USER = "admin"
+    APP_PASS = "password"
 
 def check_login():
     """Simple username/password authentication."""
