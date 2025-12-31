@@ -55,6 +55,7 @@ projects/
 - `ui_components/summary.py`: Provides `render_run_summary(run_path)` for generating high-level run summaries including top KPIs and recommended next steps
 - `ui_components/header.py`: Provides `render_run_header()` for consistent run metrics display across tabs
 - `ui_components/plots.py`: Provides `render_plots(run_path)` for plot rendering with deduplication, category grouping, and selection UI (Select Plot / Grid View modes)
+- `ui_components/findings.py`: Provides `normalize_and_group_anomalies()` for consolidating related anomalies with user-friendly labels, `render_anomaly_card()` for styled anomaly cards with severity/summary/cause/action, and `render_interpretation_bullets()` for interpretation display
 - `llm_utils.py`: Provides `load_llm_interpretation()` and `render_llm_summary()` for future LLM integration
 
 ## Dependencies

@@ -95,6 +95,26 @@ def render_overview(ctx: RunContext):
     st.subheader("Run Summary")
     display_run_summary(ctx.run_path)
     
+    anomaly_list = []
+    if ctx.anomalies:
+        if isinstance(ctx.anomalies, dict) and "anomalies" in ctx.anomalies:
+            anomaly_list = ctx.anomalies.get("anomalies", [])
+        elif isinstance(ctx.anomalies, list):
+            anomaly_list = ctx.anomalies
+    
+    if anomaly_list:
+        critical_count = sum(1 for a in anomaly_list if a.get("severity") == "critical")
+        warning_count = sum(1 for a in anomaly_list if a.get("severity") == "warning")
+        
+        if critical_count > 0:
+            st.warning(f"**{len(anomaly_list)} anomalies detected** ({critical_count} critical, {warning_count} warnings). See the **Key Findings** tab for details and recommended actions.")
+        elif warning_count > 0:
+            st.info(f"**{len(anomaly_list)} anomalies detected** ({warning_count} warnings). See the **Key Findings** tab for details.")
+        else:
+            st.info(f"**{len(anomaly_list)} anomalies detected**. See the **Key Findings** tab for details.")
+    else:
+        st.success("No anomalies detected in this run.")
+    
     st.subheader("Data Quality Highlights")
     if ctx.data_profile and "columns" in ctx.data_profile:
         columns = ctx.data_profile["columns"]
@@ -160,32 +180,14 @@ def render_overview(ctx: RunContext):
             st.json(ctx.data_profile)
 
 
-def group_anomalies_by_mechanism(anomaly_list: list) -> dict:
-    """Group anomalies by their underlying mechanism/metric type."""
-    groups = defaultdict(list)
-    
-    for anomaly in anomaly_list:
-        metric = anomaly.get("metric", "other")
-        base_metric = metric.split("_")[0] if "_" in metric else metric
-        
-        if "units" in metric.lower():
-            key = "units"
-        elif "sales" in metric.lower():
-            key = "sales"
-        elif "profit" in metric.lower():
-            key = "profit"
-        elif "margin" in metric.lower():
-            key = "margin"
-        else:
-            key = base_metric
-        
-        groups[key].append(anomaly)
-    
-    return dict(groups)
-
-
 def render_key_findings(ctx: RunContext):
-    """Key Findings tab with unified anomalies and interpretation."""
+    """Key Findings tab with consolidated anomalies and interpretation."""
+    import sys
+    app_dir = Path(__file__).parent
+    if str(app_dir) not in sys.path:
+        sys.path.insert(0, str(app_dir))
+    from ui_components.findings import normalize_and_group_anomalies, render_anomaly_card, render_interpretation_bullets
+    
     st.header("Key Findings")
     render_run_header(ctx)
     
@@ -197,105 +199,34 @@ def render_key_findings(ctx: RunContext):
             anomaly_list = ctx.anomalies
     
     if anomaly_list:
-        st.subheader(f"Anomalies ({len(anomaly_list)} detected)")
+        grouped_anomalies = normalize_and_group_anomalies(anomaly_list)
         
-        grouped = group_anomalies_by_mechanism(anomaly_list)
+        critical_count = sum(1 for g in grouped_anomalies if g["severity"] == "critical")
+        warning_count = sum(1 for g in grouped_anomalies if g["severity"] == "warning")
         
-        for mechanism, anomalies in grouped.items():
-            severity_order = {"critical": 0, "warning": 1, "info": 2}
-            sorted_anomalies = sorted(
-                anomalies, 
-                key=lambda x: severity_order.get(x.get("severity", "info"), 3)
-            )
-            
-            top_severity = sorted_anomalies[0].get("severity", "info") if sorted_anomalies else "info"
-            
-            if top_severity == "critical":
-                badge = "🔴"
-                border_color = "#ff4b4b"
-            elif top_severity == "warning":
-                badge = "🟠"
-                border_color = "#ffa500"
-            else:
-                badge = "🔵"
-                border_color = "#4b9fff"
-            
-            mechanism_title = mechanism.replace("_", " ").title()
-            
-            st.markdown(f"""
-<div style="border-left: 4px solid {border_color}; padding: 10px 15px; margin: 10px 0; background: rgba(0,0,0,0.05); border-radius: 4px;">
-    <div><strong>{badge} {mechanism_title} Anomalies ({len(anomalies)})</strong></div>
-</div>
-            """, unsafe_allow_html=True)
-            
-            for anomaly in sorted_anomalies:
-                severity = anomaly.get("severity", "info")
-                summary = anomaly.get("summary", "No summary available")
-                metric = anomaly.get("metric", "N/A")
-                value = anomaly.get("value", "N/A")
-                
-                severity_label = {"critical": "CRITICAL", "warning": "WARNING", "info": "INFO"}.get(severity, "INFO")
-                
-                st.markdown(f"- **[{severity_label}]** {summary}")
-                
-                with st.expander(f"Details: {metric}"):
-                    st.markdown(f"**Metric:** `{metric}` | **Value:** `{value}`")
-                    
-                    threshold = anomaly.get("threshold", {})
-                    if threshold:
-                        st.markdown(f"**Thresholds:** Critical > {threshold.get('critical', 'N/A')}, Warning > {threshold.get('warning', 'N/A')}")
-                    
-                    st.markdown(f"**Direction:** {anomaly.get('direction', 'N/A')}")
-                    
-                    if "evidence_keys" in anomaly:
-                        st.markdown(f"**Evidence Keys:** `{', '.join(anomaly['evidence_keys'])}`")
-                    
-                    st.markdown("**Recommended:** Investigate the underlying data for this metric to understand the anomaly.")
+        st.markdown(f"**{len(grouped_anomalies)} issue groups** detected ({critical_count} critical, {warning_count} warnings)")
+        
+        run_id = ctx.run_path.name
+        for i, group in enumerate(grouped_anomalies):
+            render_anomaly_card(group, run_id, i)
     else:
         st.success("No anomalies detected in this analysis run.")
     
     st.subheader("Interpretation Summary")
     
     if ctx.interpretation:
-        if isinstance(ctx.interpretation, dict):
-            if "summary" in ctx.interpretation:
-                st.markdown("**What the anomalies suggest:**")
-                st.markdown(ctx.interpretation["summary"])
-            
-            if "findings" in ctx.interpretation:
-                st.markdown("**Key findings:**")
-                for finding in ctx.interpretation["findings"]:
-                    st.markdown(f"- {finding}")
-            
-            if "ruled_out" in ctx.interpretation:
-                st.markdown("**What's ruled out:**")
-                for item in ctx.interpretation["ruled_out"]:
-                    st.markdown(f"- {item}")
-            
-            if "recommendations" in ctx.interpretation:
-                st.markdown("**Further analysis needed:**")
-                for rec in ctx.interpretation["recommendations"]:
-                    st.markdown(f"- {rec}")
-        else:
-            st.write(ctx.interpretation)
+        render_interpretation_bullets(ctx.interpretation)
     else:
         if anomaly_list:
-            critical_count = sum(1 for a in anomaly_list if a.get("severity") == "critical")
-            warning_count = sum(1 for a in anomaly_list if a.get("severity") == "warning")
-            
-            st.markdown(f"""
-**Summary:** This run detected {len(anomaly_list)} anomalies ({critical_count} critical, {warning_count} warnings).
-Review the anomaly cards above for details on each finding.
-            """)
+            st.info("Detailed interpretation not available. Review the anomaly cards above for findings.")
         else:
             st.info("No interpretation available for this run.")
     
-    with st.expander("Raw artifact data"):
+    with st.expander("Raw anomaly data"):
         if ctx.anomalies:
-            st.markdown("**Anomalies (raw):**")
             st.json(ctx.anomalies)
         if ctx.interpretation:
-            st.markdown("**Interpretation (raw):**")
+            st.markdown("**Interpretation JSON:**")
             st.json(ctx.interpretation)
 
 
