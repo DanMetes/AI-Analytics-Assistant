@@ -1,0 +1,141 @@
+Block 1: Add distribution and top‑k insights to the EDA
+
+NON‑NEGOTIABLE CONSTRAINTS (READ FIRST)
+DO NOT modify code under src/, projects/, tests/, tools/, or CLI.
+DO NOT alter artifact schemas, filenames, or locations.
+DO NOT create new folders outside app/. Only create files in app/ if necessary.
+DO NOT duplicate logic; reuse existing helpers.
+The analytics engine is deterministic and locked. You are only enhancing the presentation layer.
+
+Enhance EDA insights:
+
+Extend app/ui_components/profile_utils.py by adding functions:
+
+top_categories(profile, n=3): returns the top n categories and their counts for each categorical field.
+
+distribution_stats(profile): for each numeric column, compute and return min, q25, median, q75, q95, max, and standard deviation.
+
+Modify the Profiling & EDA tab to display these new insights:
+
+Under “EDA Highlights”, create subsections: “Top categories”, “Distributions” and “Correlations”.
+
+Show a small table for each numeric column with its distribution stats.
+
+List the top categories for each categorical column (e.g. top 3 product categories and their share of rows).
+
+Remove repeated summary counts (rows, columns, missing cells) since they are already shown in the header.
+
+Add a tooltip explaining why these insights matter (e.g., distributions reveal skew; top categories indicate concentration of data).
+
+Keep the full ydata‑profiling report embed unchanged under its expander.
+
+🧪 Block 2: Add top‑driver analysis and outlier detection
+
+NON‑NEGOTIABLE CONSTRAINTS (READ FIRST)
+Same constraints as above.
+
+Top drivers & outliers:
+
+In app/ui_components/metrics.py, add a function analyze_top_drivers(metrics_df, metric, group_by, top_n=5) that:
+
+Calculates the sum (for numeric metrics) or count (for categorical metrics) across groups.
+
+Sorts the groups by their contribution and returns the top n contributors plus their percentage of the total.
+
+Expose these results in the Metrics tab:
+
+After the “Trends & Drivers” interactive charts, add a “Top Drivers” section that displays the top categories or time buckets for the selected metric and group-by.
+
+Show a simple bar chart along with a table summarising each top driver’s contribution and % of total.
+
+Implement an “Outlier Detection” callout:
+
+For each numeric metric, compare the 95th percentile vs. the median.
+
+If the ratio exceeds a threshold (e.g. 5x), display a warning that outliers may dominate the results.
+
+Suggest reviewing the distribution or drilling down into individual rows (this can be later linked to Ask & Explore).
+
+📚 Block 3: Summarise correlations and unique values
+
+NON‑NEGOTIABLE CONSTRAINTS (READ FIRST)
+Same constraints as above.
+
+Correlations & unique counts:
+
+Enhance profile_utils.summarize_profile to compute:
+
+The top three strongest positive correlations (highest absolute correlation coefficients) and identify the variable pairs.
+
+Unique value counts for each categorical column; highlight columns with more than 10 distinct values as potentially high cardinality.
+
+Display these new insights under the EDA Highlights as separate subsections.
+
+For correlations: show pairs like “Profit & Sales: 0.91” with a brief explanation of correlation interpretation (e.g. values close to 1/-1 indicate strong relationships).
+
+For high cardinality: list the column name and number of unique values, and note that such fields may require special handling (e.g. binning or grouping).
+
+Keep explanatory tooltips for terms like “correlation” and “cardinality”.
+
+🤖 Block 4: Fully operationalise Ask & Explore and enable LLM Q&A
+
+NON‑NEGOTIABLE CONSTRAINTS (READ FIRST)
+Same constraints as above.
+
+Ask & Explore operationalisation:
+
+Complete app/ask_engine.py by implementing run_ask(project_id, run_id, question) to:
+
+Invoke analyst-agent ask --project <project_id> --question "<question>" with subprocess.run, capturing the JSON output.
+
+Parse the JSON to decide if the answer is directly available (contains answer) or if a methodology plan and code are provided (contains plan and code).
+
+Return the answer or plan in a structured form to the UI.
+
+In the Ask tab, after the user submits a question:
+
+If deterministic mode is selected: call run_ask() and display the answer with evidence references.
+
+If the question can’t be answered: show the methodology plan and a “Download Python code” button.
+
+If “Use AI (LLM)” is checked and your API key is present, send the question and relevant artifact summaries to OpenAI (via llm_utils.run_llm_ask) and display the answer; otherwise fall back to deterministic mode.
+
+Always display a note clarifying which mode answered the question and any caveats.
+
+Improve error handling in Ask & Explore: show friendly messages for timeouts, missing data, or invalid questions.
+
+📌 Block 5: Strengthen narrative synthesis and decision‑making focus
+
+NON‑NEGOTIABLE CONSTRAINTS (READ FIRST)
+Same constraints as above.
+
+Narrative synthesis & insights:
+
+Extend app/ui_components/findings.py’s generate_causal_narrative to incorporate EDA insights:
+
+For each anomaly group, analyse which distribution features (skew, outliers) and which top categories/time periods may explain the anomaly.
+
+Summarise this in two sentences: one explaining the likely cause (e.g. a small number of extreme values or a broad shift across categories), and one recommending the next analytic or business step.
+
+In the Key Findings tab, replace the simple next‑step bullet with the new narrative: show the cause, evidence, and recommended action.
+
+If LLM interpretation is available (llm_interpretation.json), display both deterministic and AI narratives side by side, making it clear that AI summarises the same evidence.
+
+In the Summary Report tab, synthesise:
+
+Top metrics and their trends.
+
+Key anomalies and causal narratives.
+- EDA insights (distributions, correlations, top categories).
+- Recommended next analyses or operational actions.
+- Provide an option to download as Markdown or PDF.
+
+🔒 Additional clarifications
+
+Why your own API key matters: Using Replit’s built‑in OpenAI integration means your prompts are billed to your Replit credits at Replit’s rates. By reading OPENAI_API_KEY from st.secrets and directly calling OpenAI through llm_utils.py, you control costs and avoid unexpected Replit charges.
+
+Login protection: The simple username/password (set in Replit secrets) guards your in‑development app from public access. It’s not bulletproof security, but it keeps random visitors and bots out while you iterate.
+
+Applicability to any dataset: The new distribution, top‑driver, and correlation analyses are all generic; they do not assume domain‑specific columns. They automatically pick up numeric and categorical fields from any dataset, making the insights adaptable.
+
+Ask & Explore scope: Deterministic Q&A will answer from existing artifacts or produce a methodology plan with code. LLM Q&A (optional) will attempt more open‑ended reasoning with the same evidence, but will clearly indicate it’s AI‑generated.

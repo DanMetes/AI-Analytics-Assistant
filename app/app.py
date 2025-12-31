@@ -286,7 +286,7 @@ def render_metrics(ctx: RunContext):
     app_dir = Path(__file__).parent
     if str(app_dir) not in sys.path:
         sys.path.insert(0, str(app_dir))
-    from ui_components.metrics import render_kpi_dashboard, render_metrics_glossary
+    from ui_components.metrics import render_kpi_dashboard, render_metrics_glossary, render_top_drivers
     
     st.header("Metrics")
     render_run_header(ctx)
@@ -359,6 +359,8 @@ def render_metrics(ctx: RunContext):
                     st.pyplot(fig)
                     plt.close()
     
+    render_top_drivers(df, ctx.run_path.name, selected_section)
+    
     with st.expander("Full metrics data"):
         st.dataframe(df, width="stretch")
         csv_data = df.to_csv(index=False)
@@ -428,6 +430,7 @@ Use these insights to understand your data before analysis and identify potentia
     st.caption("Key data quality insights. Row/column counts shown in the header above.")
     
     from ui_components.profile_utils import STAT_TOOLTIPS
+    import pandas as pd
     
     if ctx.data_profile:
         summary = summarize_profile(ctx.data_profile)
@@ -437,47 +440,93 @@ Use these insights to understand your data before analysis and identify potentia
                             summary.top_positive_correlations or summary.top_negative_correlations or 
                             summary.top_unique_counts)
             
-            if has_highlights:
-                left_col, right_col = st.columns(2)
+            eda_tab1, eda_tab2, eda_tab3 = st.tabs(["Top Categories", "Distributions", "Correlations"])
+            
+            with eda_tab1:
+                st.markdown("**Categorical Column Analysis** ℹ️", help=STAT_TOOLTIPS.get("top_categories", ""))
                 
-                with left_col:
-                    if summary.top_missing:
-                        st.markdown("**Missing Data**")
-                        for col, pct in summary.top_missing:
-                            severity_color = COLORS["critical"] if pct > 20 else COLORS["warning"] if pct > 5 else COLORS["info"]
-                            st.markdown(f"<span style='color:{severity_color}'>●</span> `{col}`: {pct:.1f}% missing", unsafe_allow_html=True)
+                if summary.top_categories:
+                    st.caption("_Most frequent values in categorical columns. High concentration may indicate data imbalance._")
+                    cat_cols = st.columns(min(len(summary.top_categories), 3))
+                    for i, (col_name, categories) in enumerate(list(summary.top_categories.items())[:6]):
+                        col_idx = i % 3
+                        with cat_cols[col_idx]:
+                            st.markdown(f"**{col_name}**")
+                            for cat, count in categories:
+                                st.markdown(f"- {cat}: {count:,}")
+                elif summary.top_unique_counts:
+                    st.caption("_Cardinality (unique values) per categorical column. Value counts not available in profile._")
+                    cat_data = []
+                    for col, count in summary.top_unique_counts:
+                        high_card = "⚠️ High" if count > 10 else "Normal"
+                        cat_data.append({"Column": col, "Unique Values": count, "Cardinality Level": high_card})
+                    st.dataframe(pd.DataFrame(cat_data), hide_index=True, use_container_width=True)
+                    if summary.high_cardinality:
+                        st.markdown("**High-Cardinality Columns** (may need special handling):")
+                        for col, card in summary.high_cardinality:
+                            st.markdown(f"- `{col}`: {card:,} unique values")
+                else:
+                    st.info("No categorical columns found in the dataset.")
+            
+            with eda_tab2:
+                st.markdown("**Distributions** ℹ️", help=STAT_TOOLTIPS.get("distribution", ""))
+                st.caption("_Distribution statistics reveal skew and outliers. Compare median vs P95 to detect extreme values._")
+                
+                if summary.distribution_stats:
+                    dist_data = []
+                    for ds in summary.distribution_stats[:10]:
+                        dist_data.append({
+                            "Column": ds.column,
+                            "Min": f"{ds.min_val:,.2f}",
+                            "P05": f"{ds.p05:,.2f}",
+                            "Median": f"{ds.median:,.2f}",
+                            "Mean": f"{ds.mean:,.2f}",
+                            "P95": f"{ds.p95:,.2f}",
+                            "Max": f"{ds.max_val:,.2f}",
+                            "Std Dev": f"{ds.std_dev:,.2f}"
+                        })
+                    dist_df = pd.DataFrame(dist_data)
+                    st.dataframe(dist_df, hide_index=True, use_container_width=True)
                     
                     if summary.top_skewed:
-                        st.markdown("**Skewed Distributions** ℹ️", help=STAT_TOOLTIPS["skew"])
-                        st.caption("_Skew > 1 or < -1 indicates significant asymmetry_")
+                        st.markdown("**Skewed Columns** ℹ️", help=STAT_TOOLTIPS["skew"])
                         for col, skew in summary.top_skewed:
-                            direction = "→" if skew > 0 else "←"
-                            st.markdown(f"- `{col}`: {direction} skew = {skew:.2f}")
-                    
-                    if summary.top_unique_counts:
-                        st.markdown("**Unique Value Counts** ℹ️", help=STAT_TOOLTIPS["unique_values"])
-                        for col, count in summary.top_unique_counts:
-                            st.markdown(f"- `{col}`: {count:,} unique values")
+                            direction = "right-tailed →" if skew > 0 else "← left-tailed"
+                            st.markdown(f"- `{col}`: {direction} (skew = {skew:.2f})")
+                else:
+                    st.info("No numeric columns found for distribution analysis.")
+            
+            with eda_tab3:
+                corr_left, corr_right = st.columns(2)
                 
-                with right_col:
+                with corr_left:
                     if summary.top_positive_correlations:
                         st.markdown("**Positive Correlations** ℹ️", help=STAT_TOOLTIPS["correlation"])
+                        st.caption("_Values close to +1 indicate strong positive relationships._")
                         for col_a, col_b, r in summary.top_positive_correlations:
                             strength = "strong" if r > 0.7 else "moderate" if r > 0.4 else "weak"
                             st.markdown(f"- `{col_a}` ↔ `{col_b}`: r = +{r:.3f} ({strength})")
-                    
+                    else:
+                        st.info("No significant positive correlations detected.")
+                
+                with corr_right:
                     if summary.top_negative_correlations:
                         st.markdown("**Negative Correlations** ℹ️", help=STAT_TOOLTIPS["correlation"])
+                        st.caption("_Values close to -1 indicate strong negative relationships._")
                         for col_a, col_b, r in summary.top_negative_correlations:
                             strength = "strong" if abs(r) > 0.7 else "moderate" if abs(r) > 0.4 else "weak"
                             st.markdown(f"- `{col_a}` ↔ `{col_b}`: r = {r:.3f} ({strength})")
-                    
-                    if summary.high_cardinality:
-                        st.markdown("**High-Cardinality Fields**")
-                        st.caption("_Many unique values may need grouping or encoding_")
-                        for col, card in summary.high_cardinality:
-                            st.markdown(f"- `{col}`: {card:,} unique values")
-            else:
+                    else:
+                        st.info("No significant negative correlations detected.")
+                
+                if summary.high_cardinality:
+                    st.markdown("---")
+                    st.markdown("**High-Cardinality Fields** ℹ️", help=STAT_TOOLTIPS.get("unique_values", ""))
+                    st.caption("_Many unique values may need grouping or encoding for analysis._")
+                    for col, card in summary.high_cardinality:
+                        st.markdown(f"- `{col}`: {card:,} unique values")
+            
+            if not has_highlights:
                 st.success("No notable data quality issues detected in this dataset.")
         else:
             st.info("Profile data not available for highlights.")
@@ -596,7 +645,9 @@ Choose between deterministic answers (fully reproducible) or AI-powered explanat
                 llm_answer, references = run_llm_ask(question, context)
             
             if llm_answer and not llm_answer.startswith("Error:"):
-                st.success("**AI-Powered Answer:**")
+                st.markdown("---")
+                st.markdown("#### Answer (AI-Powered Mode)")
+                st.info("This answer was generated by a language model interpreting your analysis artifacts.")
                 st.markdown(llm_answer)
                 
                 if references:
@@ -604,7 +655,7 @@ Choose between deterministic answers (fully reproducible) or AI-powered explanat
                     for ref in references:
                         st.markdown(f"- `{ref}`")
                 
-                st.caption("_This answer was generated by AI and should be verified against the source data._")
+                st.caption("⚠️ _AI-generated content should be verified against source data. Results may vary between queries._")
                 ai_answered = True
             else:
                 st.warning("AI could not generate an answer. Trying deterministic Q&A...")
@@ -645,7 +696,9 @@ The question is taking longer than expected to process. Try a simpler question o
                 else:
                     st.error(f"Error processing question: {error}")
             elif answer is not None:
-                st.success("Answer found from existing artifacts:")
+                st.markdown("---")
+                st.markdown("#### Answer (Deterministic Mode)")
+                st.success("This answer is derived directly from computed metrics and is fully reproducible.")
                 st.markdown(answer)
                 
                 if evidence_keys:
@@ -825,9 +878,33 @@ def render_summary_report(ctx: RunContext):
                 for col, pct in summary.top_missing[:3]:
                     report_lines.append(f"- `{col}`: {pct:.2f}% missing")
             if summary.top_skewed:
+                report_lines.append("")
                 report_lines.append("**Most Skewed Columns:**")
                 for col, skew in summary.top_skewed[:3]:
-                    report_lines.append(f"- `{col}`: skew = {skew:.2f}")
+                    direction = "right-tailed" if skew > 0 else "left-tailed"
+                    report_lines.append(f"- `{col}`: {direction} (skew = {skew:.2f})")
+            if summary.top_positive_correlations:
+                report_lines.append("")
+                report_lines.append("**Strongest Correlations:**")
+                for col_a, col_b, r in summary.top_positive_correlations[:3]:
+                    report_lines.append(f"- `{col_a}` ↔ `{col_b}`: r = {r:.3f}")
+            if summary.top_categories:
+                report_lines.append("")
+                report_lines.append("**Top Categories by Column:**")
+                for col_name, categories in list(summary.top_categories.items())[:3]:
+                    top_cats = ", ".join([f"{c[0]} ({c[1]:,})" for c in categories[:2]])
+                    report_lines.append(f"- `{col_name}`: {top_cats}")
+            elif summary.top_unique_counts:
+                report_lines.append("")
+                report_lines.append("**Categorical Column Cardinality:**")
+                for col, card in summary.top_unique_counts[:3]:
+                    card_level = "high" if card > 10 else "low"
+                    report_lines.append(f"- `{col}`: {card:,} unique values ({card_level} cardinality)")
+            if summary.distribution_stats:
+                report_lines.append("")
+                report_lines.append("**Numeric Column Distributions:**")
+                for ds in summary.distribution_stats[:3]:
+                    report_lines.append(f"- `{ds.column}`: median={ds.median:,.1f}, range=[{ds.min_val:,.1f} - {ds.max_val:,.1f}]")
         else:
             report_lines.append("_Profile highlights not available._")
     else:

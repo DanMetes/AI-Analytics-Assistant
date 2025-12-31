@@ -206,6 +206,237 @@ def render_kpi_dashboard(metrics_df: pd.DataFrame, run_id: str = "", show_trends
                 st.caption(kpi["description"][:60] + "..." if len(kpi["description"]) > 60 else kpi["description"])
 
 
+def analyze_top_drivers(
+    metrics_df: pd.DataFrame, 
+    metric: str, 
+    group_by: str, 
+    top_n: int = 5
+) -> Optional[pd.DataFrame]:
+    """
+    Calculate the top n contributors for a given metric grouped by a field.
+    
+    Args:
+        metrics_df: DataFrame containing metrics.csv data
+        metric: The metric to analyze (e.g., "sum_sales")
+        group_by: The group-by field to analyze
+        top_n: Number of top contributors to return
+        
+    Returns:
+        DataFrame with columns: group, value, percent_of_total
+    """
+    if metrics_df is None or metrics_df.empty:
+        return None
+    
+    group_summary = metrics_df[metrics_df["section"] == "group_summary"].copy()
+    if group_summary.empty:
+        return None
+    
+    metric_rows = group_summary[group_summary["key"].str.contains(metric, case=False, na=False)]
+    if metric_rows.empty:
+        return None
+    
+    results = []
+    for _, row in metric_rows.iterrows():
+        key = row["key"]
+        key_parts = key.split(":")
+        
+        if len(key_parts) >= 2:
+            group_value = key_parts[0]
+            try:
+                value = float(row["value"])
+                results.append({"group": group_value, "value": value})
+            except (ValueError, TypeError):
+                continue
+    
+    if not results:
+        return None
+    
+    df = pd.DataFrame(results)
+    df = df.groupby("group", as_index=False).sum()
+    
+    total = df["value"].sum()
+    df["percent_of_total"] = (df["value"] / total * 100) if total > 0 else 0
+    
+    df = df.sort_values("value", ascending=False).head(top_n)
+    
+    return df
+
+
+def detect_outliers(metrics_df: pd.DataFrame, threshold_ratio: float = 5.0) -> List[Dict[str, Any]]:
+    """
+    Detect metrics where outliers may dominate results.
+    
+    Compares the 95th percentile vs median ratio for each numeric metric.
+    If ratio exceeds threshold (default 5x), flags as potential outlier issue.
+    
+    Returns:
+        List of dicts with metric name, median, p95, ratio, and warning message
+    """
+    if metrics_df is None or metrics_df.empty:
+        return []
+    
+    warnings = []
+    
+    overall = metrics_df[metrics_df["section"] == "overall"].copy()
+    time_summary = metrics_df[metrics_df["section"] == "time_summary"].copy()
+    
+    all_metrics = pd.concat([overall, time_summary])
+    
+    metric_names = set()
+    for key in all_metrics["key"].unique():
+        parts = key.split(":")
+        metric_name = parts[-1] if len(parts) > 0 else key
+        if metric_name and not metric_name.isdigit():
+            metric_names.add(metric_name)
+    
+    for metric_name in metric_names:
+        metric_rows = all_metrics[all_metrics["key"].str.endswith(metric_name)]
+        if len(metric_rows) < 2:
+            continue
+        
+        try:
+            values = metric_rows["value"].astype(float)
+            if len(values) < 3:
+                continue
+            
+            median_val = values.median()
+            p95_val = values.quantile(0.95)
+            
+            if median_val > 0 and p95_val > 0:
+                ratio = p95_val / median_val
+                if ratio >= threshold_ratio:
+                    warnings.append({
+                        "metric": metric_name,
+                        "median": median_val,
+                        "p95": p95_val,
+                        "ratio": ratio,
+                        "warning": f"The 95th percentile is {ratio:.1f}× the median, suggesting outliers may dominate aggregated results."
+                    })
+        except (ValueError, TypeError):
+            continue
+    
+    return warnings
+
+
+def render_top_drivers(metrics_df: pd.DataFrame, run_id: str = "", selected_section: str = "group_summary"):
+    """Render the Top Drivers section with bar chart and table.
+    
+    Args:
+        metrics_df: DataFrame containing metrics.csv data
+        run_id: Unique run ID for widget keys
+        selected_section: The section from which to extract top drivers
+    """
+    st.markdown("### Top Drivers")
+    st.caption("Identify which groups contribute most to your key metrics.")
+    
+    if metrics_df is None or metrics_df.empty:
+        st.info("No metrics data available for driver analysis.")
+        return
+    
+    section_df = metrics_df[metrics_df["section"] == selected_section]
+    if section_df.empty:
+        summary_sections = [s for s in metrics_df["section"].unique() if "_summary" in s]
+        if summary_sections:
+            section_df = metrics_df[metrics_df["section"] == summary_sections[0]]
+    
+    if section_df.empty:
+        st.info("No group-level data available. Run analysis with group-by dimensions to see top drivers.")
+        return
+    
+    available_metrics = set()
+    for key in section_df["key"].unique():
+        parts = key.split(":")
+        if len(parts) > 1:
+            metric_name = parts[-1]
+            if metric_name and not metric_name.isdigit():
+                available_metrics.add(metric_name)
+    
+    if not available_metrics:
+        st.info("No groupable metrics found in selected section.")
+        return
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        selected_metric = st.selectbox(
+            "Select metric",
+            sorted(available_metrics),
+            key=f"top_driver_metric_{run_id}"
+        )
+    with col2:
+        top_n = st.slider("Top N", min_value=3, max_value=10, value=5, key=f"top_driver_n_{run_id}")
+    
+    metric_rows = section_df[section_df["key"].str.contains(selected_metric, case=False, na=False)]
+    
+    results = []
+    for _, row in metric_rows.iterrows():
+        key = row["key"]
+        key_parts = key.split(":")
+        if len(key_parts) >= 2:
+            dimension_value = key_parts[0]
+            if "=" in dimension_value:
+                group_value = dimension_value.split("=", 1)[1]
+            else:
+                group_value = dimension_value
+            try:
+                value = float(row["value"])
+                results.append({"group": group_value, "value": value})
+            except (ValueError, TypeError):
+                continue
+    
+    if not results:
+        st.info(f"No data available for {selected_metric}.")
+        return
+    
+    drivers = pd.DataFrame(results)
+    drivers = drivers.groupby("group", as_index=False).sum()
+    total = drivers["value"].sum()
+    drivers["percent_of_total"] = (drivers["value"] / total * 100) if total > 0 else 0
+    drivers = drivers.sort_values("value", ascending=False).head(top_n)
+    
+    if not drivers.empty:
+        import matplotlib.pyplot as plt
+        
+        chart_col, table_col = st.columns([1, 1])
+        
+        with chart_col:
+            fig, ax = plt.subplots(figsize=(6, 4))
+            ax.barh(drivers["group"].iloc[::-1], drivers["value"].iloc[::-1])
+            ax.set_xlabel(selected_metric.replace("_", " ").title())
+            ax.set_ylabel("Group")
+            ax.set_title(f"Top {top_n} by {selected_metric.replace('_', ' ').title()}")
+            plt.tight_layout()
+            st.pyplot(fig)
+            plt.close()
+        
+        with table_col:
+            display_df = drivers[["group", "value", "percent_of_total"]].copy()
+            display_df.columns = ["Group", "Value", "% of Total"]
+            display_df["Value"] = display_df["Value"].apply(lambda x: f"{x:,.2f}")
+            display_df["% of Total"] = display_df["% of Total"].apply(lambda x: f"{x:.1f}%")
+            st.dataframe(display_df, hide_index=True, use_container_width=True)
+    else:
+        st.info(f"No data available for {selected_metric}.")
+
+
+def render_outlier_warnings(metrics_df: pd.DataFrame):
+    """Render outlier detection warnings."""
+    warnings = detect_outliers(metrics_df)
+    
+    if warnings:
+        st.markdown("### Outlier Detection")
+        st.caption("Metrics where extreme values may skew results.")
+        
+        for w in warnings[:3]:
+            st.warning(f"""
+**{w['metric'].replace('_', ' ').title()}**: {w['warning']}
+
+- Median: {w['median']:,.2f}
+- 95th Percentile: {w['p95']:,.2f}
+
+Consider reviewing the distribution or drilling down into individual rows to understand the outliers.
+            """)
+
+
 def render_metrics_glossary(metrics_df: pd.DataFrame, analysis_plan: Optional[Dict] = None):
     """
     Render a glossary of all available metrics.
