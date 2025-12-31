@@ -417,6 +417,12 @@ def render_metrics(ctx: RunContext):
 
 def render_profiling_eda(ctx: RunContext):
     """Profiling & EDA tab with merged highlights."""
+    import sys
+    app_dir = Path(__file__).parent
+    if str(app_dir) not in sys.path:
+        sys.path.insert(0, str(app_dir))
+    from ui_components.plots import render_plots
+    
     st.header("Profiling & EDA")
     render_run_header(ctx)
     
@@ -485,15 +491,8 @@ The ydata-profiling HTML report was not generated for this run.
 Profiling provides detailed statistical summaries, correlations, and data quality checks.
         """)
     
-    plots_dir = ctx.run_path / "plots"
-    if plots_dir.exists():
-        plots = list(plots_dir.glob("*.png"))
-        if plots:
-            st.subheader("Generated Plots")
-            cols = st.columns(2)
-            for i, plot_path in enumerate(sorted(plots)):
-                with cols[i % 2]:
-                    st.image(str(plot_path), caption=plot_path.stem.replace("_", " ").title())
+    st.subheader("Generated Plots")
+    render_plots(ctx.run_path)
 
 
 def run_analyst_cli(project_id: str, question: str) -> dict:
