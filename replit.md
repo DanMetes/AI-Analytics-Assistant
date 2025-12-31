@@ -54,6 +54,7 @@ projects/
 ## UI Components
 - `ui_components/summary.py`: Provides `render_run_summary(run_path)` for generating high-level run summaries including top KPIs and recommended next steps
 - `ui_components/header.py`: Provides `render_run_header()` for consistent run metrics display across tabs
+- `ui_components/plots.py`: Provides `render_plots(run_path)` for plot rendering with deduplication, category grouping, and selection UI (Select Plot / Grid View modes)
 - `llm_utils.py`: Provides `load_llm_interpretation()` and `render_llm_summary()` for future LLM integration
 
 ## Dependencies

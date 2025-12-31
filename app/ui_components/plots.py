@@ -32,6 +32,7 @@ def render_plots(run_path: Path) -> bool:
         True if plots were found and rendered, False otherwise
     """
     plots_dir = run_path / "plots"
+    run_id = run_path.name
     
     if not plots_dir.exists():
         st.info("No plots directory found for this run.")
@@ -60,7 +61,7 @@ def render_plots(run_path: Path) -> bool:
         "View mode:",
         ["Select Plot", "Grid View"],
         horizontal=True,
-        key="plot_view_mode"
+        key=f"plot_view_mode_{run_id}"
     )
     
     if view_mode == "Select Plot":
@@ -70,7 +71,7 @@ def render_plots(run_path: Path) -> bool:
             selected_category = st.selectbox(
                 "Category:",
                 categories,
-                key="plot_category"
+                key=f"plot_category_{run_id}"
             )
         else:
             selected_category = categories[0]
@@ -82,7 +83,7 @@ def render_plots(run_path: Path) -> bool:
             "Plot:",
             plot_options,
             format_func=lambda x: x.replace("_", " ").replace(".png", "").title(),
-            key="selected_plot"
+            key=f"selected_plot_{run_id}"
         )
         
         if selected_plot:
