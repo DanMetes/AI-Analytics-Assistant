@@ -195,14 +195,13 @@ def render_llm_interpretation(run_path: Path) -> bool:
 
 def render_llm_placeholder():
     """Render a placeholder for LLM features when not available."""
-    st.info("""
-**LLM interpretation not available**
-
+    with st.expander("ℹ️ AI-powered insights available", expanded=False):
+        st.markdown("""
 Run the analysis with `--llm` flag to generate AI-powered insights including:
 - Claims with confidence scores and evidence references
 - Open questions for further investigation
 - Recommended next analyses
-    """)
+        """)
 
 
 def load_profile_llm_summary(run_path: Path) -> Optional[Dict[str, Any]]:
@@ -290,12 +289,11 @@ def render_llm_profile(run_path: Path) -> bool:
 
 def render_llm_profile_placeholder():
     """Render a placeholder for LLM profile features when not available."""
-    st.info("""
-**LLM profile synthesis not available**
-
+    with st.expander("ℹ️ AI-powered profile insights available", expanded=False):
+        st.markdown("""
 Run the analysis with `--llm` flag to generate AI-powered profile insights including:
 - Natural language summary of the dataset
 - Key observations about data distributions
 - Data quality assessment
 - Column-level insights and recommendations
-    """)
+        """)

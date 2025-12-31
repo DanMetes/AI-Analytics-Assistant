@@ -79,6 +79,9 @@ def extract_trend_data(df: pd.DataFrame, metric_key: str) -> Optional[pd.DataFra
         else:
             continue
         
+        if "=" in period:
+            period = period.split("=", 1)[1]
+        
         if period in seen_periods:
             continue
         

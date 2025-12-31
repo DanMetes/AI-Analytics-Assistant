@@ -380,15 +380,16 @@ def generate_causal_narrative(
             skew_val = col_profile.get("skew")
             mean_val = col_profile.get("mean")
             
-            if max_val is not None and p95_val is not None and p95_val > 0 and max_val > p95_val * 10:
-                profile_context = f"the max {clean_col} ({max_val:,.0f}) is {max_val/p95_val:.0f}× the 95th percentile ({p95_val:,.1f})"
-                break
-            elif skew_val is not None and abs(skew_val) > 5:
+            if skew_val is not None and abs(skew_val) > 5:
                 direction = "right" if skew_val > 0 else "left"
-                profile_context = f"the {clean_col} distribution is heavily {direction}-skewed (skew={skew_val:.1f})"
+                profile_context = f"the {clean_col} distribution is heavily {direction}-skewed, indicating extreme values"
                 break
-            elif max_val is not None and mean_val is not None and mean_val > 0 and max_val > mean_val * 100:
-                profile_context = f"the max {clean_col} ({max_val:,.0f}) is {max_val/mean_val:.0f}× the mean ({mean_val:,.1f})"
+            elif max_val is not None and mean_val is not None and mean_val > 0 and max_val > mean_val * 50:
+                ratio = int(max_val / mean_val)
+                profile_context = f"some {clean_col} values are extremely high (up to {ratio}× the average)"
+                break
+            elif max_val is not None and p95_val is not None and p95_val > 0 and max_val > p95_val * 10:
+                profile_context = f"extreme {clean_col} outliers exist (max value far exceeds typical range)"
                 break
     
     evidence = profile_context or anomaly_evidence
