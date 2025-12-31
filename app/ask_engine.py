@@ -133,6 +133,39 @@ def load_generated_code(project_id: str) -> Optional[str]:
         return None
 
 
+def run_ask(project_id: str, run_id: str, question: str, use_llm: bool = False, timeout: int = 60) -> tuple:
+    """
+    Execute the analyst-agent ask command and return parsed results.
+    
+    Args:
+        project_id: The project ID to query
+        run_id: The run ID (currently unused by CLI, reserved for future)
+        question: The natural language question
+        use_llm: Whether to enable LLM features (default: False)
+        timeout: Timeout in seconds (default: 60)
+        
+    Returns:
+        Tuple of (answer, plan, code, evidence_keys):
+        - answer: str if answerable, None otherwise
+        - plan: dict with methodology if not answerable, None otherwise
+        - code: str with generated Python code if any, None otherwise
+        - evidence_keys: list of evidence keys if answerable, None otherwise
+    """
+    result = run_ask_query(project_id, question, use_llm=use_llm, timeout=timeout)
+    
+    if not result.success:
+        return (None, {"error": result.error}, None, None)
+    
+    if result.answerable:
+        return (result.answer, None, None, result.evidence_keys)
+    else:
+        plan = {
+            "methodology": result.plan,
+            "steps": result.plan_steps or []
+        }
+        return (None, plan, result.code, None)
+
+
 def run_ask_query(project_id: str, question: str, use_llm: bool = False, timeout: int = 60) -> AskResult:
     """
     Execute the analyst-agent ask command and parse the result.

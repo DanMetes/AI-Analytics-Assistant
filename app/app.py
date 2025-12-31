@@ -480,17 +480,12 @@ def render_ask_explore(ctx: RunContext):
     if str(app_dir) not in sys.path:
         sys.path.insert(0, str(app_dir))
     from llm_utils import load_llm_interpretation, render_llm_summary
-    from ask_engine import run_ask_query, AskResult
+    from ask_engine import run_ask
     
     st.header("Ask & Explore")
     render_run_header(ctx)
     
-    st.info("""
-**LLM Q&A features coming soon**
-
-Advanced natural language Q&A powered by LLM will be available when running with `--llm` flag.
-Currently, questions are answered using existing analysis artifacts.
-    """)
+    st.info("**LLM Q&A coming soon;** deterministic Q&A is available below.")
     
     st.subheader("Ask a Question")
     st.markdown("Query the analysis artifacts using natural language.")
@@ -502,6 +497,7 @@ Currently, questions are answered using existing analysis artifacts.
     )
     
     project_id = ctx.run_path.parent.parent.name
+    run_id = ctx.run_path.name
     
     col1, col2 = st.columns([1, 4])
     with col1:
@@ -509,73 +505,74 @@ Currently, questions are answered using existing analysis artifacts.
     
     if submit and question:
         with st.spinner("Processing your question..."):
-            result = run_ask_query(project_id, question, use_llm=False, timeout=60)
+            answer, plan, code, evidence_keys = run_ask(project_id, run_id, question, use_llm=False, timeout=60)
         
-        if result.success:
-            if result.answerable:
-                st.success("Answer found from existing artifacts:")
-                st.markdown(result.answer)
-                
-                if result.evidence_keys:
-                    st.markdown("**Supporting Evidence:**")
-                    for key in result.evidence_keys:
-                        st.markdown(f"- `{key}`")
-            else:
-                st.warning("This question cannot be answered from existing artifacts. A methodology plan has been generated.")
-                
-                if result.plan_steps:
-                    st.markdown("**Methodology Plan:**")
-                    for i, step in enumerate(result.plan_steps, 1):
-                        st.markdown(f"{i}. {step}")
-                elif result.plan:
-                    st.markdown("**Methodology Plan:**")
-                    st.markdown(result.plan)
-                
-                if result.code:
-                    st.markdown("**Generated Python Code:**")
-                    st.code(result.code, language="python")
-                    
-                    st.download_button(
-                        label="Download Code",
-                        data=result.code,
-                        file_name="generated_query.py",
-                        mime="text/x-python",
-                        key=f"download_code_{ctx.run_path.name}"
-                    )
-        else:
-            if "not installed" in (result.error or "").lower() or "not in path" in (result.error or "").lower():
+        if plan and "error" in plan:
+            error = plan.get("error", "")
+            if "not installed" in error.lower() or "not in path" in error.lower():
                 st.error("""
 **CLI not available**
 
 The analyst-agent CLI is not installed or configured.
 Please ensure the package is installed with: `pip install -e .`
                 """)
-            elif "no active dataset" in (result.error or "").lower():
+            elif "no active dataset" in error.lower():
                 st.error("""
 **No dataset configured**
 
 This project doesn't have an active dataset. Please configure a dataset before asking questions.
                 """)
-            elif "no runs found" in (result.error or "").lower() or "no analysis runs" in (result.error or "").lower():
+            elif "no runs found" in error.lower() or "no analysis runs" in error.lower():
                 st.error("""
 **No analysis runs found**
 
 Please run an analysis first using: `analyst-agent run --project <project_id>`
                 """)
-            elif "project" in (result.error or "").lower() and "not found" in (result.error or "").lower():
+            elif "project" in error.lower() and "not found" in error.lower():
                 st.error(f"Project not found: `{project_id}`")
-            elif "timeout" in (result.error or "").lower():
+            elif "timeout" in error.lower():
                 st.warning("""
 **Request timed out**
 
 The question is taking longer than expected to process. Try a simpler question or wait and try again.
                 """)
             else:
-                st.error(f"Error processing question: {result.error}")
+                st.error(f"Error processing question: {error}")
+        elif answer is not None:
+            st.success("Answer found from existing artifacts:")
+            st.markdown(answer)
             
-            if result.raw_output:
-                with st.expander("Technical details"):
-                    st.code(result.raw_output, language="text")
+            if evidence_keys:
+                st.markdown("**Supporting Evidence:**")
+                for key in evidence_keys:
+                    st.markdown(f"- `{key}`")
+        elif plan is not None:
+            st.warning("This question cannot be answered from existing artifacts. A methodology plan has been generated.")
+            
+            steps = plan.get("steps", [])
+            methodology = plan.get("methodology", "")
+            
+            if steps:
+                st.markdown("**Methodology Plan:**")
+                for i, step in enumerate(steps, 1):
+                    st.markdown(f"{i}. {step}")
+            elif methodology:
+                st.markdown("**Methodology Plan:**")
+                st.markdown(methodology)
+            
+            if code:
+                st.markdown("**Generated Python Code:**")
+                st.code(code, language="python")
+                
+                st.download_button(
+                    label="Download Code",
+                    data=code,
+                    file_name="generated_query.py",
+                    mime="text/x-python",
+                    key=f"download_code_{ctx.run_path.name}"
+                )
+        else:
+            st.info("No response generated. Please try rephrasing your question.")
     elif submit:
         st.error("Please enter a question.")
     
