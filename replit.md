@@ -58,7 +58,24 @@ projects/
 - `ui_components/findings.py`: Provides `normalize_and_group_anomalies()` for consolidating related anomalies with user-friendly labels, `render_anomaly_card()` for styled anomaly cards, `render_interpretation_bullets()` for interpretation display, and `generate_causal_narrative()` for one-sentence explanations of anomaly causes with next actions
 - `llm_utils.py`: Provides `load_llm_interpretation()`, `render_llm_interpretation()` for displaying LLM claims/evidence/questions, and `render_llm_placeholder()` for when LLM output is unavailable
 - `ask_engine.py`: Provides `run_ask(project_id, run_id, question)` returning (answer, plan, code, evidence_keys) tuple, and `run_ask_query()` CLI wrapper for analyst-agent ask command
-- `ui_components/profile_utils.py`: Provides `summarize_profile(profile_json)` for extracting EDA highlights (top missing/skewed columns, correlations, high-cardinality categoricals) and `load_profile_llm_summary()` for LLM synthesis placeholder
+- `ui_components/profile_utils.py`: Provides `summarize_profile(profile_json)` for extracting EDA highlights (top missing/skewed columns, correlations, high-cardinality categoricals)
+
+## LLM Workflow
+
+The UI consumes pre-generated LLM artifacts (does NOT invoke LLMs at runtime):
+
+```bash
+analyst-agent run --project <project_id> --llm
+```
+
+**LLM Artifact Files:**
+- `llm_interpretation.json` - Anomaly/metric interpretations (Key Findings tab)
+- `profile_llm_summary.json` - Data profile synthesis (Profiling & EDA tab)
+
+**UI Functions:**
+- `llm_utils.render_llm_interpretation(run_path)` - Displays LLM interpretation if file exists
+- `llm_utils.render_llm_profile(run_path)` - Displays profile summary if file exists
+- Placeholders shown when files are missing, explaining how to generate them
 
 ## Dependencies
 See `pyproject.toml` for full dependency list. Key dependencies:

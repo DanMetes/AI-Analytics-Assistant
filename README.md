@@ -219,6 +219,23 @@ is not supported because it breaks package-relative imports.
 - `analyst-agent policy describe --policy <name>`  
   Prints policy metadata as JSON to stdout using stable ordering (`sort_keys=True`, consistent indent).
 
+### 5.3 LLM-enhanced analysis (Optional)
+
+Run the analysis with the `--llm` flag to generate AI-powered insights:
+
+```bash
+analyst-agent run --project <project_id> --llm
+```
+
+This produces additional artifact files:
+
+| Artifact | Description |
+|----------|-------------|
+| `llm_interpretation.json` | Anomaly/metric interpretations with claims, confidence scores, evidence references, and recommended next analyses |
+| `profile_llm_summary.json` | Data profile synthesis with natural language summary, key observations, data quality assessment, and column insights |
+
+**Important:** The UI does NOT invoke LLMs at runtime. It only consumes these pre-generated files when present. If the files are missing, the UI displays a placeholder explaining how to generate them.
+
 ---
 
 ## 6. Executive Summary in `report.md` (Batch C)

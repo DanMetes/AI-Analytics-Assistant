@@ -175,3 +175,98 @@ Run the analysis with `--llm` flag to generate AI-powered insights including:
 - Open questions for further investigation
 - Recommended next analyses
     """)
+
+
+def load_profile_llm_summary(run_path: Path) -> Optional[Dict[str, Any]]:
+    """
+    Load the LLM-generated profile summary if it exists.
+    
+    Args:
+        run_path: Path to the run directory
+        
+    Returns:
+        Dictionary containing LLM profile summary data, or None if not available.
+        Expected structure:
+        {
+            "summary": str,
+            "key_observations": [str],
+            "data_quality_assessment": str,
+            "column_insights": [{"column": str, "insight": str}],
+            "recommendations": [str],
+            "generated_at": str
+        }
+    """
+    llm_path = run_path / "profile_llm_summary.json"
+    if llm_path.exists():
+        try:
+            with open(llm_path, "r") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return None
+    return None
+
+
+def render_llm_profile(run_path: Path) -> bool:
+    """
+    Render the LLM-generated profile summary in Streamlit UI.
+    
+    Displays AI-synthesized insights about the data profile including
+    key observations, data quality assessment, and recommendations.
+    
+    Args:
+        run_path: Path to the run directory
+        
+    Returns:
+        True if LLM profile summary was found and rendered, False otherwise.
+    """
+    profile_summary = load_profile_llm_summary(run_path)
+    
+    if profile_summary is None:
+        return False
+    
+    st.subheader("AI-Generated Data Profile Summary")
+    
+    if "summary" in profile_summary:
+        st.markdown(profile_summary["summary"])
+    
+    if "key_observations" in profile_summary and profile_summary["key_observations"]:
+        st.markdown("**Key Observations:**")
+        for obs in profile_summary["key_observations"]:
+            st.markdown(f"- {obs}")
+    
+    if "data_quality_assessment" in profile_summary:
+        st.markdown("**Data Quality Assessment:**")
+        st.markdown(profile_summary["data_quality_assessment"])
+    
+    if "column_insights" in profile_summary and profile_summary["column_insights"]:
+        with st.expander("Column-Level Insights"):
+            for insight in profile_summary["column_insights"]:
+                if isinstance(insight, dict):
+                    col = insight.get("column", "Unknown")
+                    desc = insight.get("insight", "")
+                    st.markdown(f"**{col}:** {desc}")
+                else:
+                    st.markdown(f"- {insight}")
+    
+    if "recommendations" in profile_summary and profile_summary["recommendations"]:
+        st.markdown("**Recommendations:**")
+        for rec in profile_summary["recommendations"]:
+            st.markdown(f"- {rec}")
+    
+    if "generated_at" in profile_summary:
+        st.caption(f"Profile summary generated: {profile_summary['generated_at']}")
+    
+    return True
+
+
+def render_llm_profile_placeholder():
+    """Render a placeholder for LLM profile features when not available."""
+    st.info("""
+**LLM profile synthesis not available**
+
+Run the analysis with `--llm` flag to generate AI-powered profile insights including:
+- Natural language summary of the dataset
+- Key observations about data distributions
+- Data quality assessment
+- Column-level insights and recommendations
+    """)

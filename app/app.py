@@ -378,7 +378,7 @@ def render_profiling_eda(ctx: RunContext):
     if str(app_dir) not in sys.path:
         sys.path.insert(0, str(app_dir))
     from ui_components.plots import render_plots
-    from ui_components.profile_utils import summarize_profile, load_profile_llm_summary
+    from ui_components.profile_utils import summarize_profile
     
     st.header("Profiling & EDA")
     render_run_header(ctx)
@@ -430,23 +430,10 @@ The `data_profile.json` was not generated for this run.
 3. Re-run the analysis
         """)
     
-    st.subheader("LLM Profile Synthesis")
-    llm_summary = load_profile_llm_summary(ctx.run_path)
-    if llm_summary:
-        claims = llm_summary.get("claims", [])
-        evidence = llm_summary.get("evidence", [])
-        
-        if claims:
-            st.markdown("**Key Claims:**")
-            for claim in claims:
-                st.markdown(f"- {claim}")
-        
-        if evidence:
-            st.markdown("**Supporting Evidence:**")
-            for ev in evidence:
-                st.markdown(f"- {ev}")
-    else:
-        st.info("LLM synthesis of profiling data will appear here when enabled via `--llm`.")
+    from llm_utils import render_llm_profile, render_llm_profile_placeholder
+    
+    if not render_llm_profile(ctx.run_path):
+        render_llm_profile_placeholder()
     
     st.subheader("Full Profiling Report")
     eda_html_path = ctx.run_path / "eda_report.html"
