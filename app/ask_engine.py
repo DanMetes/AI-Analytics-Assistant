@@ -187,6 +187,14 @@ def run_ask_query(project_id: str, question: str, use_llm: bool = False, timeout
             error="Project ID is required"
         )
     
+    project_id = project_id.strip()
+    if not re.match(r'^[a-zA-Z0-9_-]+$', project_id):
+        return AskResult(
+            success=False,
+            answerable=False,
+            error="Invalid project ID format"
+        )
+    
     if not question or not question.strip():
         return AskResult(
             success=False,
